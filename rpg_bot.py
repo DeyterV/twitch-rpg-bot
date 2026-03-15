@@ -15,6 +15,22 @@ from services.player_service import PlayerService, calculate_hp, calculate_damag
 from services.combat_service import CombatService
 from services.inventory_service import InventoryService
 from utils.decorators import requires_character
+import consts.game_config as _gc
+from consts.game_config import (
+    CD_ALMS,
+    BASE_XP_GAIN, XP_BUFF_MULTIPLIER, XP_DEBUFF_MULTIPLIER, XP_LOSS_ON_DEFEAT,
+    RARE_MOB_CHANCE, ATTACK_BUFF_MULTIPLIER, MOB_SCALE_MULTIPLIER_DEFAULT,
+    HP_RESTORE_RATIO, DUEL_BET_WIN_MULTIPLIER,
+    BLACK_MARKET_MAX_ITEMS, BLACK_MARKET_REFRESH_INTERVAL,
+    STARTING_GOLD,
+    BROTHEL_COST, BROTHEL_PENALTY_CHANCE, BROTHEL_BUFF_DURATION,
+    HEAL_COST, FULL_HEAL_COST,
+    BASE_STEAL_CHANCE, STEAL_PRISON_DURATION, BRIBE_COST,
+    TAVERN_COST, TAVERN_BUFF_DURATION,
+    SELL_PRICE_RATIO, MIN_SELL_PRICE,
+    ALMS_CHOICES,
+    DAMAGE_MIN_BASE, DAMAGE_MIN_COEF, DAMAGE_MAX_BASE, DAMAGE_MAX_COEF,
+)
 
 # Настройка логирования
 logging.basicConfig(filename='bot.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -47,11 +63,6 @@ _CLASSES = _load_yml('classes.yml')
 
 class RPGbot(commands.Bot):
     """Twitch RPG бот с системой уровней, боев, экономики и кражи."""
-
-    CD_XP: int = 300
-    CD_FIGHT: int = 90
-    CD_PVP: int = 60
-    CD_STEAL: int = 300
 
     def __init__(self):
         """Инициализация бота с загрузкой данных игроков и настройкой параметров."""
@@ -100,7 +111,7 @@ class RPGbot(commands.Bot):
                     default_player = {
                         'level': 1,
                         'xp': 0,
-                        'gold': 15,
+                        'gold': STARTING_GOLD,
                         'inventory': [],
                         'equipment': {'weapon': None, 'armor': None, 'helmet': None, 'pet': None, 'amulet': None},
                         'last_xp_time': 0,
@@ -167,7 +178,7 @@ class RPGbot(commands.Bot):
 
     def refresh_black_market(self):
         """Обновить ассортимент черного рынка."""
-        self.black_market_items = random.sample(BLACK_MARKET_ITEMS, k=min(3, len(BLACK_MARKET_ITEMS)))
+        self.black_market_items = random.sample(BLACK_MARKET_ITEMS, k=min(BLACK_MARKET_MAX_ITEMS, len(BLACK_MARKET_ITEMS)))
         self.black_market_last_refresh = time.time()
         logging.info("Чёрный рынок обновлён")
 
@@ -184,7 +195,7 @@ class RPGbot(commands.Bot):
     async def cmd_black_market(self, ctx):
         """Показать доступные предметы на черном рынке."""
         now = time.time()
-        if now - self.black_market_last_refresh > 600 or not self.black_market_items:
+        if now - self.black_market_last_refresh > BLACK_MARKET_REFRESH_INTERVAL or not self.black_market_items:
             self.refresh_black_market()
 
         msg_lines = ['🕶️ Тёмный торговец шепчет:\nСегодня в продаже:']
@@ -273,8 +284,8 @@ class RPGbot(commands.Bot):
         p = self.players[target]
         lvl = p["level"]
         min_bonus, max_bonus, hp_bonus = self.get_equipment_bonuses(p)
-        base_min = 5 + lvl * 2
-        base_max = 10 + lvl * 3
+        base_min = DAMAGE_MIN_BASE + lvl * DAMAGE_MIN_COEF
+        base_max = DAMAGE_MAX_BASE + lvl * DAMAGE_MAX_COEF
         dmg_range = f'{base_min + min_bonus}-{base_max + max_bonus}'
         hp = calculate_hp(lvl) + hp_bonus
         current_hp = p.get('current_hp', hp)
@@ -334,18 +345,18 @@ class RPGbot(commands.Bot):
         user = ctx.author.name.lower()
         player = self.players[user]
 
-        if not await self.check_cooldown(player, 'last_xp_time', self.CD_XP, ctx):
+        if not await self.check_cooldown(player, 'last_xp_time', _gc.CD_XP, ctx):
             return
 
-        base_xp = 50
+        base_xp = BASE_XP_GAIN
         race_bonus = self.races[player.get('race', '')].get('xp_bonus', 0) if player.get('race') else 0
         class_bonus = self.classes[player.get('class', '')].get('xp_bonus', 0) if player.get('class') else 0
 
         now = time.time()
         if player.get('xp_buff_until', 0) > now:
-            base_xp = int(base_xp * 1.5)
+            base_xp = int(base_xp * XP_BUFF_MULTIPLIER)
         if player.get('xp_penalty', False):
-            base_xp = int(base_xp * 0.5)
+            base_xp = int(base_xp * XP_DEBUFF_MULTIPLIER)
         base_xp = int(base_xp * (1 + race_bonus + class_bonus))
 
         player['xp'] += base_xp
@@ -441,27 +452,27 @@ class RPGbot(commands.Bot):
             await ctx.send(f'@{ctx.author.name}, ты в тюрьме! Заплати взятку (!взятка) или жди {remain} сек.')
             return
 
-        if not await self.check_cooldown(player, 'last_fight_time', self.CD_FIGHT, ctx):
+        if not await self.check_cooldown(player, 'last_fight_time', _gc.CD_FIGHT, ctx):
             return
 
         parts = ctx.message.content.strip().split()
         monster_name = (
             parts[1].capitalize()
             if len(parts) > 1 and parts[1].capitalize() in MONSTERS
-            else random.choice([k for k, v in MONSTERS.items() if not v.get('rare', False) or random.random() < 0.1])
+            else random.choice([k for k, v in MONSTERS.items() if not v.get('rare', False) or random.random() < RARE_MOB_CHANCE])
         )
 
         level = player['level']
         min_bonus, max_bonus, hp_bonus = self.get_equipment_bonuses(player)
         player_hp = calculate_hp(level) + hp_bonus
-        attack_multiplier = 1.1 if player.get('attack_buff_until', 0) > now else 1.0
+        attack_multiplier = ATTACK_BUFF_MULTIPLIER if player.get('attack_buff_until', 0) > now else 1.0
 
         result = self.combat_service.simulate_fight(
             player, monster_name, MONSTERS, min_bonus, max_bonus, player_hp, attack_multiplier, level
         )
 
         _m = MONSTERS[monster_name]
-        log = [f'{ctx.author.name} сражается с {monster_name}! (Монстр: HP {int(_m["base_hp"] * (1 + (level - 1) * _m.get("scale_multiplier", 0.25)))})']
+        log = [f'{ctx.author.name} сражается с {monster_name}! (Монстр: HP {int(_m["base_hp"] * (1 + (level - 1) * _m.get("scale_multiplier", MOB_SCALE_MULTIPLIER_DEFAULT)))})']
 
         if result.won:
             player['xp'] += result.xp_gained
@@ -480,7 +491,7 @@ class RPGbot(commands.Bot):
             if leveled:
                 log.append(f'📈 Уровень повышен! Текущий уровень: {player["level"]}')
         else:
-            xp_loss = int(player['xp'] * 0.1)
+            xp_loss = int(player['xp'] * XP_LOSS_ON_DEFEAT)
             player['xp'] = max(0, player['xp'] - xp_loss)
             player['current_hp'] = result.player_hp_left
             log.append(f'💀 Поражение от {monster_name}... Потеряно {xp_loss} XP')
@@ -535,8 +546,8 @@ class RPGbot(commands.Bot):
         thp = self.player_service.get_max_hp(tl)
         cl_bon = self.get_equipment_bonuses(cl)
         tl_bon = self.get_equipment_bonuses(tl)
-        cdmg = f'{5 + cl["level"] * 2 + cl_bon[0]}-{10 + cl["level"] * 3 + cl_bon[1]}'
-        tdmg = f'{5 + tl["level"] * 2 + tl_bon[0]}-{10 + tl["level"] * 3 + tl_bon[1]}'
+        cdmg = f'{DAMAGE_MIN_BASE + cl["level"] * DAMAGE_MIN_COEF + cl_bon[0]}-{DAMAGE_MAX_BASE + cl["level"] * DAMAGE_MAX_COEF + cl_bon[1]}'
+        tdmg = f'{DAMAGE_MIN_BASE + tl["level"] * DAMAGE_MIN_COEF + tl_bon[0]}-{DAMAGE_MAX_BASE + tl["level"] * DAMAGE_MAX_COEF + tl_bon[1]}'
 
         self.pending_duels[target] = {'challenger': challenger, 'amount': amount}
         await ctx.send(
@@ -573,8 +584,8 @@ class RPGbot(commands.Bot):
         a = self.players[challenger]
         d = self.players[defender]
 
-        if not await self.check_cooldown(a, 'last_pvp_time', self.CD_PVP, ctx) or \
-           not await self.check_cooldown(d, 'last_pvp_time', self.CD_PVP, ctx):
+        if not await self.check_cooldown(a, 'last_pvp_time', _gc.CD_PVP, ctx) or \
+           not await self.check_cooldown(d, 'last_pvp_time', _gc.CD_PVP, ctx):
             return
 
         if amount > 0 and (a['gold'] < amount or d['gold'] < amount):
@@ -589,8 +600,8 @@ class RPGbot(commands.Bot):
         min_d, max_d, hp_d = self.get_equipment_bonuses(d)
         hp1 = a.get('current_hp', calculate_hp(a['level']) + hp_a)
         hp2 = d.get('current_hp', calculate_hp(d['level']) + hp_d)
-        multiplier_a = 1.1 if a.get('attack_buff_until', 0) > now else 1.0
-        multiplier_d = 1.1 if d.get('attack_buff_until', 0) > now else 1.0
+        multiplier_a = ATTACK_BUFF_MULTIPLIER if a.get('attack_buff_until', 0) > now else 1.0
+        multiplier_d = ATTACK_BUFF_MULTIPLIER if d.get('attack_buff_until', 0) > now else 1.0
 
         result = self.combat_service.simulate_duel(
             challenger, defender, a, d,
@@ -599,9 +610,9 @@ class RPGbot(commands.Bot):
         )
 
         result.winner_p['current_hp'] = max(1, result.hp_winner_left)
-        result.loser_p['current_hp'] = self.player_service.get_max_hp(result.loser_p) // 2
+        result.loser_p['current_hp'] = self.player_service.get_max_hp(result.loser_p) // HP_RESTORE_RATIO
 
-        gold_msg = f' и {amount * 2} золота' if amount > 0 else ''
+        gold_msg = f' и {amount * DUEL_BET_WIN_MULTIPLIER} золота' if amount > 0 else ''
         result.winner_p['xp'] += result.xp_reward
         level_msg = ''
         if self.try_level_up(result.winner_p):
@@ -610,7 +621,7 @@ class RPGbot(commands.Bot):
         result.winner_p['pvp_wins'] = result.winner_p.get('pvp_wins', 0) + 1
         result.loser_p['pvp_losses'] = result.loser_p.get('pvp_losses', 0) + 1
         if amount > 0:
-            result.winner_p['gold'] += amount * 2
+            result.winner_p['gold'] += amount * DUEL_BET_WIN_MULTIPLIER
         self.save_players()
         logging.info(f"Дуэль: {result.winner} победил {result.loser}, получил {result.xp_reward} XP{gold_msg}")
 
@@ -690,7 +701,7 @@ class RPGbot(commands.Bot):
         """Посетить бордель для получения баффа или штрафа."""
         user = ctx.author.name.lower()
         player = self.players[user]
-        cost = 100
+        cost = BROTHEL_COST
         now = time.time()
 
         if player['gold'] < cost:
@@ -702,13 +713,13 @@ class RPGbot(commands.Bot):
             return
 
         player['gold'] -= cost
-        if random.random() < 0.25:
+        if random.random() < BROTHEL_PENALTY_CHANCE:
             player['xp_penalty'] = True
             await ctx.send(
                 f'💋 {ctx.author.name}, ты подцепил что-то... XP уменьшается на 50%! Используй !лечиться за 50 золота.')
             logging.info(f"{user} получил штраф XP в борделе")
         else:
-            player['xp_buff_until'] = now + 1800
+            player['xp_buff_until'] = now + BROTHEL_BUFF_DURATION
             await ctx.send(
                 f'💃 {ctx.author.name}, ты вдохновлён! В течение 30 минут +50% XP.')
             logging.info(f"{user} получил бафф XP в борделе")
@@ -720,7 +731,7 @@ class RPGbot(commands.Bot):
         """Вылечиться от штрафа за посещение борделя."""
         user = ctx.author.name.lower()
         player = self.players[user]
-        cost = 50
+        cost = HEAL_COST
 
         if not player.get('xp_penalty'):
             await ctx.send(f'{ctx.author.name}, тебе не нужно лечение.')
@@ -759,7 +770,7 @@ class RPGbot(commands.Bot):
             await ctx.send(f'{ctx.author.name}, этот предмет нельзя продать.')
             return
 
-        sell_price = ITEMS[actual]['price'] // 2
+        sell_price = ITEMS[actual]['price'] // SELL_PRICE_RATIO
         player['inventory'].remove(actual)
         player['gold'] += sell_price
         self.save_players()
@@ -790,7 +801,7 @@ class RPGbot(commands.Bot):
             return
 
         price = ITEMS[actual].get('price', 0)
-        sell_price = max(price // 2, 1)
+        sell_price = max(price // SELL_PRICE_RATIO, MIN_SELL_PRICE)
         await ctx.send(f'{ctx.author.name}, ты можешь продать "{actual}" за {sell_price} золота.')
 
     @commands.command(name='кража')
@@ -816,7 +827,7 @@ class RPGbot(commands.Bot):
             return
 
         player = self.players[user]
-        if not await self.check_cooldown(player, 'last_steal_time', self.CD_STEAL, ctx):
+        if not await self.check_cooldown(player, 'last_steal_time', _gc.CD_STEAL, ctx):
             return
 
         target_player = self.players[target]
@@ -824,7 +835,7 @@ class RPGbot(commands.Bot):
             await ctx.send(f'{ctx.author.name}, у @{target} нет предмета "{item_name}".')
             return
 
-        steal_chance = 0.1 + (
+        steal_chance = BASE_STEAL_CHANCE + (
             self.classes[player.get('class', '')].get('steal_chance_bonus', 0)
             if player.get('class') else 0
         )
@@ -840,7 +851,7 @@ class RPGbot(commands.Bot):
         else:
             now = time.time()
             player['prison'] = True
-            player['prison_until'] = now + 600
+            player['prison_until'] = now + STEAL_PRISON_DURATION
             await ctx.send(f'@{ctx.author.name}, кража не удалась, тебя схватила стража! Ты в тюрьме на 5 минут.')
             logging.info(f"{user} провалил кражу, отправлен в тюрьму")
         self.save_players()
@@ -857,7 +868,7 @@ class RPGbot(commands.Bot):
             await ctx.send(f'{ctx.author.name}, ты не в тюрьме.')
             return
 
-        cost = 50
+        cost = BRIBE_COST
         if player['gold'] < cost:
             await ctx.send(f'{ctx.author.name}, у тебя недостаточно золота (нужно {cost}).')
             return
@@ -875,7 +886,7 @@ class RPGbot(commands.Bot):
         """Посетить таверну для получения баффа на урон."""
         user = ctx.author.name.lower()
         player = self.players[user]
-        cost = 50
+        cost = TAVERN_COST
         now = time.time()
 
         if player.get('attack_buff_until', 0) > now:
@@ -887,7 +898,7 @@ class RPGbot(commands.Bot):
             return
 
         player['gold'] -= cost
-        player['attack_buff_until'] = now + 1800
+        player['attack_buff_until'] = now + TAVERN_BUFF_DURATION
         self.save_players()
         logging.info(f"{user} получил бафф урона в таверне")
         await ctx.send(f'🍺 {ctx.author.name}, ты отдохнул в таверне! В течение 30 минут +10% урона.')
@@ -954,7 +965,7 @@ class RPGbot(commands.Bot):
         """Полностью восстановить HP за 5 золота."""
         user = ctx.author.name.lower()
         player = self.players[user]
-        cost = 5
+        cost = FULL_HEAL_COST
         max_hp = self.player_service.get_max_hp(player)
 
         if player['current_hp'] >= max_hp:
@@ -1030,8 +1041,8 @@ class RPGbot(commands.Bot):
             remain = int(player['alms_unteal'] - now) + 1
             await ctx.send(f'@{user}, шел бы ты, пока люлей не дали! До следующей попытки {remain} секунд.')
             return
-        gold_given = random.choice([0, 1, 2])
-        player['alms_unteal'] = now + 300
+        gold_given = random.choice(ALMS_CHOICES)
+        player['alms_unteal'] = now + CD_ALMS
         player['gold'] += gold_given
         self.save_players()
         await ctx.send(f'@{user}, тебе дали {gold_given} монет/у, благодари господа!')

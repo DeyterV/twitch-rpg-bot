@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from services.player_service import calculate_damage
+from consts.game_config import MOB_SCALE_MULTIPLIER_DEFAULT, HP_RESTORE_RATIO, PVP_XP_PER_LEVEL
 
 
 @dataclass
@@ -42,7 +43,7 @@ class CombatService:
     ) -> FightResult:
         """Симуляция боя игрока с монстром. Возвращает FightResult."""
         base = monsters[monster_name]
-        scale_factor = 1 + (level - 1) * base.get('scale_multiplier', 0.25)
+        scale_factor = 1 + (level - 1) * base.get('scale_multiplier', MOB_SCALE_MULTIPLIER_DEFAULT)
         monster_hp = int(base['base_hp'] * scale_factor)
         monster_attack = int(base['base_attack'] * scale_factor)
 
@@ -68,7 +69,7 @@ class CombatService:
                 if base['loot'] and random.random() < base['loot_chance']
                 else None
             )
-            player_hp_left = min(current_hp + player_hp // 2, player_hp)
+            player_hp_left = min(current_hp + player_hp // HP_RESTORE_RATIO, player_hp)
             return FightResult(
                 won=True,
                 rounds=rounds,
@@ -84,7 +85,7 @@ class CombatService:
                 xp_gained=0,
                 gold_gained=0,
                 loot=None,
-                player_hp_left=player_hp // 2,
+                player_hp_left=player_hp // HP_RESTORE_RATIO,
             )
 
     def simulate_duel(
@@ -139,7 +140,7 @@ class CombatService:
 
             rounds += 1
 
-        xp_reward = 10 * loser_p['level']
+        xp_reward = PVP_XP_PER_LEVEL * loser_p['level']
         return DuelResult(
             winner=winner,
             loser=loser,

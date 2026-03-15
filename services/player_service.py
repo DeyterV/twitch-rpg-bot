@@ -1,15 +1,24 @@
 import random
 import time
 
+from consts.game_config import (
+    BASE_HP, HP_PER_LEVEL,
+    DAMAGE_MIN_BASE, DAMAGE_MIN_COEF, DAMAGE_MAX_BASE, DAMAGE_MAX_COEF,
+    XP_PER_LEVEL,
+)
+
 
 def calculate_hp(level: int) -> int:
     """Рассчитать максимальное HP персонажа по уровню."""
-    return 30 + (level - 1) * 5
+    return BASE_HP + (level - 1) * HP_PER_LEVEL
 
 
 def calculate_damage(level: int) -> int:
     """Рассчитать базовый урон персонажа по уровню."""
-    return random.randint(5 + level * 2, 10 + level * 3)
+    return random.randint(
+        DAMAGE_MIN_BASE + level * DAMAGE_MIN_COEF,
+        DAMAGE_MAX_BASE + level * DAMAGE_MAX_COEF,
+    )
 
 
 class PlayerService:
@@ -52,8 +61,8 @@ class PlayerService:
     def try_level_up(self, player: dict) -> bool:
         """Проверить и повысить уровень игрока, если достаточно XP."""
         leveled_up = False
-        while player['xp'] >= player['level'] * 100:
-            player['xp'] -= player['level'] * 100
+        while player['xp'] >= player['level'] * XP_PER_LEVEL:
+            player['xp'] -= player['level'] * XP_PER_LEVEL
             player['level'] += 1
             leveled_up = True
             player['current_hp'] = self.get_max_hp(player)

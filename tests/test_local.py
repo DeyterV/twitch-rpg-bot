@@ -112,8 +112,6 @@ class TestLocalBotInit(unittest.TestCase):
         self.assertIsNotNone(bot.inventory_service)
         self.assertEqual(bot.players, {})
         self.assertEqual(bot.black_market_items, [])
-        self.assertEqual(bot.CD_XP, 45)
-        self.assertEqual(bot.CD_FIGHT, 20)
 
 
 class TestLocalBotRun(unittest.TestCase):

@@ -103,9 +103,6 @@ _HELP = 'Доступные команды: ' + ', '.join(sorted(_COMMANDS))
 class LocalBot(RPGbot):
     """RPG-бот в консольном режиме. Не подключается к Twitch."""
 
-    CD_XP: int = 45
-    CD_FIGHT: int = 20
-
     def __init__(self) -> None:
         # Инициализируем сервисы напрямую, без вызова commands.Bot.__init__
         self.player_service = PlayerService(_CLASSES, ITEMS)
