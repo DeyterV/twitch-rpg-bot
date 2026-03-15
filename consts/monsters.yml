@@ -1,27 +1,31 @@
-Гоблин:
-  base_hp: 25
-  base_attack: 8
-  xp_reward: [10, 20]
-  gold_reward: [10, 25]
-  loot: [Деревянный меч, Кожаный шлем, Странно пахнущий мешочек]
-  loot_chance: 0.3
 Слизень:
   base_hp: 30
   base_attack: 6
+  scale_multiplier: 0.05
   xp_reward: [10, 18]
   gold_reward: [8, 20]
   loot: [Слизь, Зелье лечения]
   loot_chance: 0.25
+Гоблин:
+  base_hp: 40
+  base_attack: 12
+  scale_multiplier: 0.10
+  xp_reward: [10, 20]
+  gold_reward: [10, 25]
+  loot: [Деревянный меч, Кожаный шлем, Странно пахнущий мешочек]
+  loot_chance: 0.3
 Скелет:
-  base_hp: 30
-  base_attack: 10
+  base_hp: 75
+  base_attack: 15
+  scale_multiplier: 0.05
   xp_reward: [15, 25]
   gold_reward: [15, 30]
   loot: [Железный меч, Кольчуга, Кость]
   loot_chance: 0.3
 Орк:
-  base_hp: 50
-  base_attack: 12
+  base_hp: 130
+  base_attack: 20
+  scale_multiplier: 0.02
   xp_reward: [20, 35]
   gold_reward: [20, 40]
   loot: [Орочий топор, Железный доспех, Железный шлем]
@@ -29,6 +33,7 @@
 Дракон:
   base_hp: 100
   base_attack: 20
+  scale_multiplier: 0.25
   xp_reward: [50, 80]
   gold_reward: [50, 100]
   loot: [Драконий клык, Зелье лечения, Амулет удачи]

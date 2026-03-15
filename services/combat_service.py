@@ -42,7 +42,7 @@ class CombatService:
     ) -> FightResult:
         """Симуляция боя игрока с монстром. Возвращает FightResult."""
         base = monsters[monster_name]
-        scale_factor = 1 + (level - 1) * 0.25
+        scale_factor = 1 + (level - 1) * base.get('scale_multiplier', 0.25)
         monster_hp = int(base['base_hp'] * scale_factor)
         monster_attack = int(base['base_attack'] * scale_factor)
 

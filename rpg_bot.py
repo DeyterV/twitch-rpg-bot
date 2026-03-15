@@ -454,7 +454,8 @@ class RPGbot(commands.Bot):
             player, monster_name, MONSTERS, min_bonus, max_bonus, player_hp, attack_multiplier, level
         )
 
-        log = [f'{ctx.author.name} сражается с {monster_name}! (Монстр: HP {int(MONSTERS[monster_name]["base_hp"] * (1 + (level - 1) * 0.25))})']
+        _m = MONSTERS[monster_name]
+        log = [f'{ctx.author.name} сражается с {monster_name}! (Монстр: HP {int(_m["base_hp"] * (1 + (level - 1) * _m.get("scale_multiplier", 0.25)))})']
 
         if result.won:
             player['xp'] += result.xp_gained
