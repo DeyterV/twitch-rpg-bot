@@ -11,6 +11,11 @@ from dotenv import load_dotenv
 from filelock import FileLock
 from twitchio.ext import commands
 
+from services.player_service import PlayerService, calculate_hp, calculate_damage
+from services.combat_service import CombatService
+from services.inventory_service import InventoryService
+from utils.decorators import requires_character
+
 # Настройка логирования
 logging.basicConfig(filename='bot.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -21,6 +26,7 @@ SAVE_FILE = os.getenv('SAVE_FILE', 'players.json')
 
 _CONSTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'consts')
 
+
 def _load_yml(filename):
     path = os.path.join(_CONSTS_DIR, filename)
     try:
@@ -30,6 +36,7 @@ def _load_yml(filename):
         logging.error(f"Ошибка загрузки {filename}: {e}")
         raise
 
+
 MONSTERS = _load_yml('monsters.yml')
 ITEM_DESCRIPTIONS = _load_yml('item_descriptions.yml')
 ITEMS = _load_yml('items.yml')
@@ -37,13 +44,6 @@ BLACK_MARKET_ITEMS = _load_yml('black_market_items.yml')
 _RACES = _load_yml('races.yml')
 _CLASSES = _load_yml('classes.yml')
 
-def calculate_hp(level):
-    """Рассчитать максимальное HP персонажа по уровню."""
-    return 30 + (level - 1) * 5
-
-def calculate_damage(level):
-    """Рассчитать базовый урон персонажа по уровню."""
-    return random.randint(5 + level * 2, 10 + level * 3)
 
 class RPGbot(commands.Bot):
     """Twitch RPG бот с системой уровней, боев, экономики и кражи."""
@@ -51,14 +51,33 @@ class RPGbot(commands.Bot):
     def __init__(self):
         """Инициализация бота с загрузкой данных игроков и настройкой параметров."""
         super().__init__(token=TOKEN, prefix='!', initial_channels=[CHANNEL])
-        self.players = self.load_players()
+        self.player_service = PlayerService(_CLASSES, ITEMS)
+        self.combat_service = CombatService()
+        self.inventory_service = InventoryService()
+        self.player_service.players = self.load_players()
         self.black_market_items = []
         self.black_market_last_refresh = 0
         self.pending_duels = {}
         self.races = _RACES
         self.classes = _CLASSES
 
-    def load_players(self):
+    # ------------------------------------------------------------------
+    # players — свойство для обратной совместимости с тестами
+    # ------------------------------------------------------------------
+
+    @property
+    def players(self) -> dict:
+        return self.player_service.players
+
+    @players.setter
+    def players(self, value: dict):
+        self.player_service.players = value
+
+    # ------------------------------------------------------------------
+    # Обёртки для обратной совместимости с тестами
+    # ------------------------------------------------------------------
+
+    def load_players(self) -> dict:
         """Загрузить данные игроков из JSON-файла с проверкой структуры."""
         if not os.path.exists(SAVE_FILE):
             logging.info(f"Файл {SAVE_FILE} не существует, создаётся пустой словарь игроков.")
@@ -73,7 +92,6 @@ class RPGbot(commands.Bot):
                         logging.warning(f"Файл {SAVE_FILE} пуст.")
                         return {}
                     players = json.loads(content)
-                    # Дополняем старые данные новыми полями
                     default_player = {
                         'level': 1,
                         'xp': 0,
@@ -83,6 +101,7 @@ class RPGbot(commands.Bot):
                         'last_xp_time': 0,
                         'last_fight_time': 0,
                         'last_pvp_time': 0,
+                        'last_steal_time': 0,
                         'pvp_wins': 0,
                         'pvp_losses': 0,
                         'prison': False,
@@ -95,9 +114,11 @@ class RPGbot(commands.Bot):
                         for key, value in default_player.items():
                             if key not in data:
                                 data[key] = value
-                        # Устанавливаем current_hp, если не задано
+                        # Миграция старого ключа с опечаткой
+                        if 'steal_time_unteal' in data:
+                            data['last_steal_time'] = data.pop('steal_time_unteal')
                         if data['current_hp'] is None:
-                            data['current_hp'] = calculate_hp(data['level']) + self.get_equipment_bonuses(data)[2]
+                            data['current_hp'] = self.get_equipment_bonuses(data)[2] + calculate_hp(data['level'])
                     return players
             except (json.JSONDecodeError, IOError) as e:
                 logging.error(f"Ошибка загрузки {SAVE_FILE}: {e}")
@@ -109,7 +130,6 @@ class RPGbot(commands.Bot):
         lock = FileLock(f"{SAVE_FILE}.lock")
         with lock:
             try:
-                # Создаём резервную копию
                 if os.path.exists(SAVE_FILE):
                     shutil.copy(SAVE_FILE, f"{SAVE_FILE}.bak")
                     logging.info(f"Создана резервная копия {SAVE_FILE}.bak")
@@ -120,51 +140,24 @@ class RPGbot(commands.Bot):
                 logging.error(f"Ошибка сохранения {SAVE_FILE}: {e}")
                 print(f"⚠️ Ошибка сохранения {SAVE_FILE}: {e}")
 
-    def try_level_up(self, player):
-        """Проверить и повысить уровень игрока, если достаточно XP."""
-        leveled_up = False
-        while player['xp'] >= player['level'] * 100:
-            player['xp'] -= player['level'] * 100
-            player['level'] += 1
-            leveled_up = True
-            # Обновляем максимальное HP при повышении уровня
-            player['current_hp'] = calculate_hp(player['level']) + self.get_equipment_bonuses(player)[2]
-        return leveled_up
+    def try_level_up(self, player: dict) -> bool:
+        """Обёртка: делегирует player_service."""
+        return self.player_service.try_level_up(player)
 
-    def get_equipment_bonuses(self, player):
-        """Рассчитать бонусы от экипировки и класса."""
-        equip = player.get('equipment', {})
-        attack_bonus_min, attack_bonus_max, hp_bonus = 0, 0, 0
+    def get_equipment_bonuses(self, player: dict) -> tuple:
+        """Обёртка: делегирует player_service."""
+        return self.player_service.get_equipment_bonuses(player)
 
-        for slot, item_name in equip.items():
-            if item_name and item_name in ITEMS:
-                item = ITEMS[item_name]
-                ab_min, ab_max = item['attack_bonus'] if isinstance(item['attack_bonus'], (tuple, list)) else (item['attack_bonus'], item['attack_bonus'])
-                attack_bonus_min += ab_min
-                attack_bonus_max += ab_max
-                hp_bonus += item.get('hp_bonus', 0)
-
-        # Бонусы от класса
-        player_class = player.get('class')
-        if player_class in self.classes:
-            class_info = self.classes[player_class]
-            ab_min, ab_max = class_info['attack_bonus'] if isinstance(class_info['attack_bonus'], (tuple, list)) else (class_info['attack_bonus'], class_info['attack_bonus'])
-            attack_bonus_min += ab_min
-            attack_bonus_max += ab_max
-            hp_bonus += class_info.get('hp_bonus', 0)
-
-        return attack_bonus_min, attack_bonus_max, hp_bonus
-
-    async def check_cooldown(self, player, key, cooldown, ctx):
-        """Проверить кулдаун для действия."""
-        now = time.time()
-        last_time = player.get(key, 0)
-        if now - last_time < cooldown:
-            remain = int(cooldown - (now - last_time))
+    async def check_cooldown(self, player: dict, key: str, cooldown: int, ctx) -> bool:
+        """Обёртка: проверяет кулдаун и отправляет сообщение при необходимости."""
+        ok, remain = self.player_service.check_cooldown(player, key, cooldown)
+        if not ok:
             await ctx.send(f'{ctx.author.name}, подожди {remain} секунд.')
-            return False
-        player[key] = now
-        return True
+        return ok
+
+    # ------------------------------------------------------------------
+    # Вспомогательные методы бота
+    # ------------------------------------------------------------------
 
     def refresh_black_market(self):
         """Обновить ассортимент черного рынка."""
@@ -176,6 +169,10 @@ class RPGbot(commands.Bot):
         """Обработчик события готовности бота."""
         print(f'✅ Бот подключен как {self.nick}')
         logging.info(f'Бот подключен как {self.nick}')
+
+    # ------------------------------------------------------------------
+    # Команды
+    # ------------------------------------------------------------------
 
     @commands.command(name='черныйрынок')
     async def cmd_black_market(self, ctx):
@@ -193,12 +190,10 @@ class RPGbot(commands.Bot):
             await ctx.send(line)
 
     @commands.command(name='купить')
+    @requires_character
     async def cmd_buy(self, ctx):
         """Купить предмет с черного рынка."""
         user = ctx.author.name.lower()
-        if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, у тебя нет персонажа.')
-            return
 
         parts = ctx.message.content.strip().split()
         if len(parts) != 2 or not parts[1].isdigit():
@@ -224,7 +219,7 @@ class RPGbot(commands.Bot):
 
         if item['type'] in ['pet', 'amulet', 'consumable']:
             await ctx.send(f'{ctx.author.name}, ты приобрел {item["type"]}: {item["name"]}! '
-                          f'Используй {"!надеть" if item["type"] in ["pet", "amulet"] else "!использовать"} {item["name"]}.')
+                           f'Используй {"!надеть" if item["type"] in ["pet", "amulet"] else "!использовать"} {item["name"]}.')
         else:
             await ctx.send(f'{ctx.author.name}, ты купил: {item["name"]}')
 
@@ -246,6 +241,7 @@ class RPGbot(commands.Bot):
             'last_xp_time': 0,
             'last_fight_time': 0,
             'last_pvp_time': 0,
+            'last_steal_time': 0,
             'pvp_wins': 0,
             'pvp_losses': 0,
             'prison': False,
@@ -300,13 +296,10 @@ class RPGbot(commands.Bot):
             await ctx.send(f'{target}, активные эффекты: {", ".join(status)}')
 
     @commands.command(name='инвентарь')
+    @requires_character
     async def cmd_inventory(self, ctx):
         """Показать инвентарь игрока."""
         user = ctx.author.name.lower()
-        if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, у тебя нет персонажа.')
-            return
-
         inventory = self.players[user].get('inventory', [])
         if not inventory:
             await ctx.send(f'@{ctx.author.name}, твой инвентарь пуст.')
@@ -317,13 +310,10 @@ class RPGbot(commands.Bot):
         await ctx.send(f'@{ctx.author.name}, инвентарь: {", ".join(formatted_items)}')
 
     @commands.command(name='экипировка')
+    @requires_character
     async def cmd_equipment(self, ctx):
         """Показать текущую экипировку игрока."""
         user = ctx.author.name.lower()
-        if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, у тебя нет персонажа.')
-            return
-
         equipment = self.players[user].get('equipment', {})
         eq_text = ', '.join(
             f'{slot.capitalize()}: {equipment[slot] if equipment[slot] else "—"}'
@@ -332,14 +322,12 @@ class RPGbot(commands.Bot):
         await ctx.send(f'🛡️ Экипировка {ctx.author.name}: {eq_text}')
 
     @commands.command(name='опыт')
+    @requires_character
     async def cmd_xp(self, ctx):
         """Получить опыт с учетом кулдауна и баффов."""
         user = ctx.author.name.lower()
-        if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, сначала создай персонажа (!старт).')
-            return
-
         player = self.players[user]
+
         if not await self.check_cooldown(player, 'last_xp_time', 300, ctx):
             return
 
@@ -365,58 +353,31 @@ class RPGbot(commands.Bot):
         await ctx.send(msg)
 
     @commands.command(name='надеть')
+    @requires_character
     async def cmd_equip(self, ctx):
         """Надеть предмет из инвентаря."""
         user = ctx.author.name.lower()
         item_name = ctx.message.content.strip()[7:].strip()
-
-        if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, у тебя нет персонажа.')
-            return
-
         player = self.players[user]
-        if item_name.lower() not in [i.lower() for i in player['inventory']]:
-            await ctx.send(f'{ctx.author.name}, у тебя нет предмета "{item_name}".')
+
+        ok, msg = self.inventory_service.equip_item(player, item_name, ITEMS)
+        if not ok:
+            await ctx.send(f'{ctx.author.name}, {msg}.')
             return
 
-        if item_name not in ITEMS:
-            await ctx.send(f'{ctx.author.name}, предмет "{item_name}" не может быть надет.')
-            return
-
-        item_info = ITEMS[item_name]
-        slot = item_info['slot']
-        if slot == 'consumable':
-            await ctx.send(f'{ctx.author.name}, этот предмет нельзя надеть. Используй !использовать {item_name}.')
-            return
-
-        current_equipped = player['equipment'].get(slot)
-        if current_equipped == item_name:
-            await ctx.send(f'{ctx.author.name}, у тебя уже надет "{item_name}".')
-            return
-
-        if current_equipped:
-            player['inventory'].append(current_equipped)
-        player['inventory'].remove(item_name)
-        player['equipment'][slot] = item_name
-        # Обновляем максимальное HP при смене экипировки
-        player['current_hp'] = min(player['current_hp'], calculate_hp(player['level']) + self.get_equipment_bonuses(player)[2])
+        player['current_hp'] = min(
+            player['current_hp'], self.player_service.get_max_hp(player)
+        )
         self.save_players()
-        logging.info(f"{user} надел {item_name} в слот {slot}")
-
-        msg = f'{ctx.author.name}, ты надел {item_name} в слот {slot}.'
-        if current_equipped:
-            msg = f'{ctx.author.name}, ты заменил {current_equipped} на {item_name} в слоте {slot}.'
-        await ctx.send(msg)
+        logging.info(f"{user} надел {item_name}")
+        await ctx.send(f'{ctx.author.name}, {msg}.')
 
     @commands.command(name='снять')
+    @requires_character
     async def cmd_unequip(self, ctx):
         """Снять предмет из указанного слота."""
         user = ctx.author.name.lower()
         parts = ctx.message.content.strip().split(maxsplit=1)
-
-        if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, у тебя нет персонажа.')
-            return
 
         if len(parts) < 2:
             await ctx.send(f'{ctx.author.name}, укажи слот: !снять <weapon|armor|helmet|pet|amulet>')
@@ -424,29 +385,25 @@ class RPGbot(commands.Bot):
 
         slot = parts[1].strip().lower()
         player = self.players[user]
-        if slot not in player['equipment'] or not player['equipment'][slot]:
-            await ctx.send(f'{ctx.author.name}, в слоте "{slot}" ничего не надето.')
+
+        ok, msg = self.inventory_service.unequip_item(player, slot)
+        if not ok:
+            await ctx.send(f'{ctx.author.name}, {msg}.')
             return
 
-        item_name = player['equipment'][slot]
-        player['equipment'][slot] = None
-        player['inventory'].append(item_name)
-        # Обновляем максимальное HP
-        player['current_hp'] = min(player['current_hp'], calculate_hp(player['level']) + self.get_equipment_bonuses(player)[2])
+        player['current_hp'] = min(
+            player['current_hp'], self.player_service.get_max_hp(player)
+        )
         self.save_players()
-        logging.info(f"{user} снял {item_name} из слота {slot}")
-
-        await ctx.send(f'{ctx.author.name}, ты снял "{item_name}" из слота "{slot}".')
+        logging.info(f"{user} снял предмет из слота {slot}")
+        await ctx.send(f'{ctx.author.name}, {msg}.')
 
     @commands.command(name='использовать')
+    @requires_character
     async def cmd_use(self, ctx):
         """Использовать расходуемый предмет."""
         user = ctx.author.name.lower()
         parts = ctx.message.content.strip().split(maxsplit=1)
-
-        if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, у тебя нет персонажа.')
-            return
 
         if len(parts) < 2:
             await ctx.send(f'{ctx.author.name}, укажи предмет: !использовать <название>')
@@ -454,34 +411,25 @@ class RPGbot(commands.Bot):
 
         item_name = parts[1].strip()
         player = self.players[user]
-        if item_name.lower() not in [i.lower() for i in player['inventory']]:
-            await ctx.send(f'{ctx.author.name}, у тебя нет предмета "{item_name}".')
+        max_hp = self.player_service.get_max_hp(player)
+
+        ok, msg, _ = self.inventory_service.use_item(player, item_name, ITEMS, max_hp)
+        if not ok:
+            await ctx.send(f'{ctx.author.name}, {msg}.')
             return
 
-        if item_name not in ITEMS or ITEMS[item_name]['slot'] != 'consumable':
-            await ctx.send(f'{ctx.author.name}, предмет "{item_name}" нельзя использовать.')
-            return
-
-        effect = ITEMS[item_name].get('effect', {})
-        if 'heal' in effect:
-            max_hp = calculate_hp(player['level']) + self.get_equipment_bonuses(player)[2]
-            old_hp = player['current_hp']
-            player['current_hp'] = min(player['current_hp'] + effect['heal'], max_hp)
-            player['inventory'].remove(item_name)
-            self.save_players()
-            logging.info(f"{user} использовал {item_name}, восстановлено {effect['heal']} HP")
-            await ctx.send(f'{ctx.author.name}, ты использовал "{item_name}" и восстановил {player['current_hp'] - old_hp} HP. Текущие HP: {player['current_hp']}/{max_hp}.')
+        self.save_players()
+        logging.info(f"{user} использовал {item_name}")
+        await ctx.send(f'{ctx.author.name}, {msg}.')
 
     @commands.command(name='бой')
+    @requires_character
     async def cmd_fight(self, ctx):
         """Сражение с монстром."""
         user = ctx.author.name.lower()
-        if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, создай персонажа с помощью !старт.')
-            return
-
         player = self.players[user]
         now = time.time()
+
         if player.get('prison', False) and player.get('prison_until', 0) > now:
             remain = int(player['prison_until'] - now)
             await ctx.send(f'@{ctx.author.name}, ты в тюрьме! Заплати взятку (!взятка) или жди {remain} сек.')
@@ -491,63 +439,49 @@ class RPGbot(commands.Bot):
             return
 
         parts = ctx.message.content.strip().split()
-        # Учитываем редких монстров
-        monster_name = parts[1].capitalize() if len(parts) > 1 and parts[1].capitalize() in MONSTERS else random.choice(
-            [k for k, v in MONSTERS.items() if not v.get('rare', False) or random.random() < 0.1]
+        monster_name = (
+            parts[1].capitalize()
+            if len(parts) > 1 and parts[1].capitalize() in MONSTERS
+            else random.choice([k for k, v in MONSTERS.items() if not v.get('rare', False) or random.random() < 0.1])
         )
-        base = MONSTERS[monster_name]
-        level = player['level']
-        scale_factor = 1 + (level - 1) * 0.25
-        monster_hp = int(base['base_hp'] * scale_factor)
-        monster_attack = int(base['base_attack'] * scale_factor)
 
+        level = player['level']
         min_bonus, max_bonus, hp_bonus = self.get_equipment_bonuses(player)
         player_hp = calculate_hp(level) + hp_bonus
-        current_hp = player.get('current_hp', player_hp)
-
-        # Учёт баффа таверны
         attack_multiplier = 1.1 if player.get('attack_buff_until', 0) > now else 1.0
 
-        log = [f'{ctx.author.name} сражается с {monster_name}! (Монстр: {monster_hp} HP, {monster_attack} ATK)']
-        raund = 0
+        result = self.combat_service.simulate_fight(
+            player, monster_name, MONSTERS, min_bonus, max_bonus, player_hp, attack_multiplier, level
+        )
 
-        while monster_hp > 0 and current_hp > 0:
-            raund += 1
-            total_attack = int((calculate_damage(level) + random.randint(min_bonus, max_bonus)) * attack_multiplier)
-            monster_hp -= total_attack
-            if monster_hp <= 0:
-                break
-            current_hp -= monster_attack
+        log = [f'{ctx.author.name} сражается с {monster_name}! (Монстр: HP {int(MONSTERS[monster_name]["base_hp"] * (1 + (level - 1) * 0.25))})']
 
-        if current_hp > 0:
-            xp_reward = random.randint(*base['xp_reward'])
-            gold_reward = random.randint(*base['gold_reward'])
-            player['xp'] += xp_reward
-            player['gold'] += gold_reward
-            drop = random.choice(base['loot']) if base['loot'] and random.random() < base['loot_chance'] else None
-            if drop:
-                player['inventory'].append(drop)
-            player['current_hp'] = min(current_hp + player_hp // 2, player_hp)
+        if result.won:
+            player['xp'] += result.xp_gained
+            player['gold'] += result.gold_gained
+            if result.loot:
+                player['inventory'].append(result.loot)
+            player['current_hp'] = result.player_hp_left
             leveled = self.try_level_up(player)
             self.save_players()
-            logging.info(f"{user} победил {monster_name}, получил {xp_reward} XP, {gold_reward} золота, дроп: {drop}")
+            logging.info(f"{user} победил {monster_name}, получил {result.xp_gained} XP, {result.gold_gained} золота, дроп: {result.loot}")
 
-            msg = f'🏆 Победа за {raund} ходов! +{xp_reward} XP, +{gold_reward} золота.'
-            if drop:
-                msg += f' Дроп: {drop}.'
+            msg = f'🏆 Победа за {result.rounds} ходов! +{result.xp_gained} XP, +{result.gold_gained} золота.'
+            if result.loot:
+                msg += f' Дроп: {result.loot}.'
             log.append(msg)
             if leveled:
                 log.append(f'📈 Уровень повышен! Текущий уровень: {player["level"]}')
         else:
             xp_loss = int(player['xp'] * 0.1)
             player['xp'] = max(0, player['xp'] - xp_loss)
-            player['current_hp'] = player_hp // 2
+            player['current_hp'] = result.player_hp_left
             log.append(f'💀 Поражение от {monster_name}... Потеряно {xp_loss} XP')
             self.save_players()
             logging.info(f"{user} проиграл {monster_name}, потеряно {xp_loss} XP")
 
-        for l in log:
-            await ctx.send(l)
+        for line in log:
+            await ctx.send(line)
 
     @commands.command(name='топ')
     async def cmd_top(self, ctx):
@@ -590,10 +524,12 @@ class RPGbot(commands.Bot):
 
         cl = self.players[challenger]
         tl = self.players[target]
-        chp = calculate_hp(cl['level']) + self.get_equipment_bonuses(cl)[2]
-        thp = calculate_hp(tl['level']) + self.get_equipment_bonuses(tl)[2]
-        cdmg = f'{5 + cl["level"] * 2 + self.get_equipment_bonuses(cl)[0]}-{10 + cl["level"] * 3 + self.get_equipment_bonuses(cl)[1]}'
-        tdmg = f'{5 + tl["level"] * 2 + self.get_equipment_bonuses(tl)[0]}-{10 + tl["level"] * 3 + self.get_equipment_bonuses(tl)[1]}'
+        chp = self.player_service.get_max_hp(cl)
+        thp = self.player_service.get_max_hp(tl)
+        cl_bon = self.get_equipment_bonuses(cl)
+        tl_bon = self.get_equipment_bonuses(tl)
+        cdmg = f'{5 + cl["level"] * 2 + cl_bon[0]}-{10 + cl["level"] * 3 + cl_bon[1]}'
+        tdmg = f'{5 + tl["level"] * 2 + tl_bon[0]}-{10 + tl["level"] * 3 + tl_bon[1]}'
 
         self.pending_duels[target] = {'challenger': challenger, 'amount': amount}
         await ctx.send(
@@ -604,14 +540,12 @@ class RPGbot(commands.Bot):
         logging.info(f"{challenger} вызвал {target} на дуэль с ставкой {amount}")
 
     @commands.command(name='принять')
+    @requires_character
     async def cmd_accept(self, ctx):
         """Принять вызов на дуэль."""
         defender = ctx.author.name.lower()
-        if defender not in self.players:
-            await ctx.send(f'{ctx.author.name}, у тебя нет персонажа.')
-            return
-
         now = time.time()
+
         if self.players[defender].get('prison', False) and self.players[defender].get('prison_until', 0) > now:
             remain = int(self.players[defender]['prison_until'] - now)
             await ctx.send(f'@{ctx.author.name}, ты в тюрьме! Заплати взятку (!взятка) или жди {remain} сек.')
@@ -631,7 +565,9 @@ class RPGbot(commands.Bot):
 
         a = self.players[challenger]
         d = self.players[defender]
-        if not await self.check_cooldown(a, 'last_pvp_time', 60, ctx) or not await self.check_cooldown(d, 'last_pvp_time', 60, ctx):
+
+        if not await self.check_cooldown(a, 'last_pvp_time', 60, ctx) or \
+           not await self.check_cooldown(d, 'last_pvp_time', 60, ctx):
             return
 
         if amount > 0 and (a['gold'] < amount or d['gold'] < amount):
@@ -642,63 +578,36 @@ class RPGbot(commands.Bot):
             a['gold'] -= amount
             d['gold'] -= amount
 
-        min_bonus_a, max_bonus_a, hp_bonus_a = self.get_equipment_bonuses(a)
-        min_bonus_d, max_bonus_d, hp_bonus_d = self.get_equipment_bonuses(d)
-        hp1 = a.get('current_hp', calculate_hp(a['level']) + hp_bonus_a)
-        hp2 = d.get('current_hp', calculate_hp(d['level']) + hp_bonus_d)
+        min_a, max_a, hp_a = self.get_equipment_bonuses(a)
+        min_d, max_d, hp_d = self.get_equipment_bonuses(d)
+        hp1 = a.get('current_hp', calculate_hp(a['level']) + hp_a)
+        hp2 = d.get('current_hp', calculate_hp(d['level']) + hp_d)
+        multiplier_a = 1.1 if a.get('attack_buff_until', 0) > now else 1.0
+        multiplier_d = 1.1 if d.get('attack_buff_until', 0) > now else 1.0
 
-        attack_multiplier_a = 1.1 if a.get('attack_buff_until', 0) > now else 1.0
-        attack_multiplier_d = 1.1 if d.get('attack_buff_until', 0) > now else 1.0
+        result = self.combat_service.simulate_duel(
+            challenger, defender, a, d,
+            (min_a, max_a), (min_d, max_d),
+            multiplier_a, multiplier_d, hp1, hp2
+        )
 
-        attacker_name, defender_name = (challenger, defender) if random.random() < 0.5 else (defender, challenger)
-        attacker_p, defender_p = (a, d) if attacker_name == challenger else (d, a)
-        hp_attacker, hp_defender = (hp1, hp2) if attacker_name == challenger else (hp2, hp1)
-        attacker_bonus = (min_bonus_a, max_bonus_a) if attacker_name == challenger else (min_bonus_d, max_bonus_d)
-        defender_bonus = (min_bonus_d, max_bonus_d) if attacker_name == challenger else (min_bonus_a, max_bonus_a)
-        attacker_multiplier = attack_multiplier_a if attacker_name == challenger else attack_multiplier_d
-        defender_multiplier = attack_multiplier_d if attacker_name == challenger else attack_multiplier_a
-
-        def dmg(p, min_b, max_b, multiplier):
-            base = calculate_damage(p['level'])
-            bonus = random.randint(min_b, max_b)
-            return int((base + bonus) * multiplier)
-
-        round_num = 1
-        while True:
-            damage = dmg(attacker_p, *attacker_bonus, attacker_multiplier)
-            hp_defender -= damage
-            if hp_defender <= 0:
-                winner, loser = attacker_name, defender_name
-                winner_p, loser_p = attacker_p, defender_p
-                break
-
-            damage = dmg(defender_p, *defender_bonus, defender_multiplier)
-            hp_attacker -= damage
-            if hp_attacker <= 0:
-                winner, loser = defender_name, attacker_name
-                winner_p, loser_p = attacker_p, defender_p
-                break
-
-            round_num += 1
-
-        winner_p['current_hp'] = max(1, hp_attacker if winner == attacker_name else hp_defender)
-        loser_p['current_hp'] = calculate_hp(loser_p['level']) + self.get_equipment_bonuses(loser_p)[2] // 2
+        result.winner_p['current_hp'] = max(1, result.hp_winner_left)
+        result.loser_p['current_hp'] = self.player_service.get_max_hp(result.loser_p) // 2
 
         gold_msg = f' и {amount * 2} золота' if amount > 0 else ''
-        xp = 10 * loser_p['level']
-        winner_p['xp'] += xp
+        result.winner_p['xp'] += result.xp_reward
         level_msg = ''
-        if self.try_level_up(winner_p):
-            level_msg = f'📈 {winner} повышает уровень! Теперь уровень {winner_p["level"]}.'
+        if self.try_level_up(result.winner_p):
+            level_msg = f'📈 {result.winner} повышает уровень! Теперь уровень {result.winner_p["level"]}.'
 
-        winner_p['pvp_wins'] = winner_p.get('pvp_wins', 0) + 1
-        loser_p['pvp_losses'] = loser_p.get('pvp_losses', 0) + 1
+        result.winner_p['pvp_wins'] = result.winner_p.get('pvp_wins', 0) + 1
+        result.loser_p['pvp_losses'] = result.loser_p.get('pvp_losses', 0) + 1
         if amount > 0:
-            winner_p['gold'] += amount * 2
+            result.winner_p['gold'] += amount * 2
         self.save_players()
-        logging.info(f"Дуэль: {winner} победил {loser}, получил {xp} XP{gold_msg}")
+        logging.info(f"Дуэль: {result.winner} победил {result.loser}, получил {result.xp_reward} XP{gold_msg}")
 
-        await ctx.send(f'🏁 Побеждает {winner}, получает {xp} XP{gold_msg}!')
+        await ctx.send(f'🏁 Побеждает {result.winner}, получает {result.xp_reward} XP{gold_msg}!')
         if level_msg:
             await ctx.send(level_msg)
 
@@ -721,12 +630,10 @@ class RPGbot(commands.Bot):
         await ctx.send(f'{ctx.author.name}, у тебя нет активных вызовов на дуэль.')
 
     @commands.command(name='пвп')
+    @requires_character
     async def cmd_pvp_stats(self, ctx):
         """Показать статистику PvP."""
         user = ctx.author.name.lower()
-        if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, у тебя нет персонажа.')
-            return
         p = self.players[user]
         wins = p.get('pvp_wins', 0)
         losses = p.get('pvp_losses', 0)
@@ -771,13 +678,10 @@ class RPGbot(commands.Bot):
                            f'Инвентарь: {", ".join(unique_items)}')
 
     @commands.command(name='бордель')
+    @requires_character
     async def cmd_brothel(self, ctx):
         """Посетить бордель для получения баффа или штрафа."""
         user = ctx.author.name.lower()
-        if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, сначала создай персонажа (!старт).')
-            return
-
         player = self.players[user]
         cost = 100
         now = time.time()
@@ -804,13 +708,10 @@ class RPGbot(commands.Bot):
         self.save_players()
 
     @commands.command(name='лечиться')
+    @requires_character
     async def cmd_heal(self, ctx):
         """Вылечиться от штрафа за посещение борделя."""
         user = ctx.author.name.lower()
-        if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, у тебя нет персонажа.')
-            return
-
         player = self.players[user]
         cost = 50
 
@@ -829,14 +730,11 @@ class RPGbot(commands.Bot):
         await ctx.send(f'🧼 {ctx.author.name}, ты вылечился и готов к приключениям!')
 
     @commands.command(name='продать')
+    @requires_character
     async def cmd_sell(self, ctx):
         """Продать предмет из инвентаря."""
         user = ctx.author.name.lower()
         parts = ctx.message.content.strip().split(maxsplit=1)
-
-        if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, у тебя нет персонажа.')
-            return
 
         if len(parts) != 2:
             await ctx.send(f'{ctx.author.name}, укажи предмет: !продать <название>')
@@ -844,57 +742,56 @@ class RPGbot(commands.Bot):
 
         item_name = parts[1].strip()
         player = self.players[user]
-        if item_name.lower() not in [i.lower() for i in player['inventory']]:
+        actual = self.inventory_service.find_item(player, item_name)
+
+        if actual is None:
             await ctx.send(f'{ctx.author.name}, у тебя нет предмета "{item_name}".')
             return
 
-        if item_name not in ITEMS or 'price' not in ITEMS[item_name]:
+        if actual not in ITEMS or 'price' not in ITEMS[actual]:
             await ctx.send(f'{ctx.author.name}, этот предмет нельзя продать.')
             return
 
-        sell_price = ITEMS[item_name]['price'] // 2
-        player['inventory'].remove(item_name)
+        sell_price = ITEMS[actual]['price'] // 2
+        player['inventory'].remove(actual)
         player['gold'] += sell_price
         self.save_players()
-        logging.info(f"{user} продал {item_name} за {sell_price} золота")
-        await ctx.send(f'{ctx.author.name}, ты продал "{item_name}" за {sell_price} золота.')
+        logging.info(f"{user} продал {actual} за {sell_price} золота")
+        await ctx.send(f'{ctx.author.name}, ты продал "{actual}" за {sell_price} золота.')
 
     @commands.command(name='оценить')
+    @requires_character
     async def cmd_appraise(self, ctx):
         """Оценить стоимость предмета."""
         user = ctx.author.name.lower()
         parts = ctx.message.content.strip().split(maxsplit=1)
-
-        if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, у тебя нет персонажа.')
-            return
 
         if len(parts) < 2:
             await ctx.send(f'{ctx.author.name}, укажи предмет: !оценить <название>')
             return
 
         item_name = parts[1].strip()
-        if item_name.lower() not in [i.lower() for i in self.players[user]['inventory']]:
+        player = self.players[user]
+        actual = self.inventory_service.find_item(player, item_name)
+
+        if actual is None:
             await ctx.send(f'{ctx.author.name}, у тебя нет предмета "{item_name}".')
             return
 
-        if item_name not in ITEMS:
-            await ctx.send(f'{ctx.author.name}, предмет "{item_name}" не подлежит продаже.')
+        if actual not in ITEMS:
+            await ctx.send(f'{ctx.author.name}, предмет "{actual}" не подлежит продаже.')
             return
 
-        price = ITEMS[item_name].get('price', 0)
+        price = ITEMS[actual].get('price', 0)
         sell_price = max(price // 2, 1)
-        await ctx.send(f'{ctx.author.name}, ты можешь продать "{item_name}" за {sell_price} золота.')
+        await ctx.send(f'{ctx.author.name}, ты можешь продать "{actual}" за {sell_price} золота.')
 
     @commands.command(name='кража')
+    @requires_character
     async def cmd_steal(self, ctx):
         """Попытаться украсть предмет у другого игрока."""
         user = ctx.author.name.lower()
         parts = ctx.message.content.strip().split(maxsplit=2)
-
-        if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, у тебя нет персонажа.')
-            return
 
         if len(parts) < 3:
             await ctx.send(f'{ctx.author.name}, формат: !кража @ник <предмет>')
@@ -912,24 +809,29 @@ class RPGbot(commands.Bot):
             return
 
         player = self.players[user]
-        now = time.time()
-        if not await self.check_cooldown(player, 'steal_time_unteal', 300, ctx):
+        if not await self.check_cooldown(player, 'last_steal_time', 300, ctx):
             return
 
-        if item_name.lower() not in [i.lower() for i in self.players[target]['inventory']]:
+        target_player = self.players[target]
+        if self.inventory_service.find_item(target_player, item_name) is None:
             await ctx.send(f'{ctx.author.name}, у @{target} нет предмета "{item_name}".')
             return
 
-        steal_chance = 0.1 + (self.classes[player.get('class', '')].get('steal_chance_bonus', 0) if player.get('class') else 0)
+        steal_chance = 0.1 + (
+            self.classes[player.get('class', '')].get('steal_chance_bonus', 0)
+            if player.get('class') else 0
+        )
         if player['equipment'].get('amulet') == 'Амулет удачи':
             steal_chance += ITEMS['Амулет удачи']['effect']['steal_chance_bonus']
 
         if random.random() < steal_chance:
-            player['inventory'].append(item_name)
-            self.players[target]['inventory'].remove(item_name)
-            await ctx.send(f'{ctx.author.name}, {item_name} успешно украден у @{target}!')
-            logging.info(f"{user} украл {item_name} у {target}")
+            actual = self.inventory_service.find_item(target_player, item_name)
+            player['inventory'].append(actual)
+            target_player['inventory'].remove(actual)
+            await ctx.send(f'{ctx.author.name}, {actual} успешно украден у @{target}!')
+            logging.info(f"{user} украл {actual} у {target}")
         else:
+            now = time.time()
             player['prison'] = True
             player['prison_until'] = now + 300
             await ctx.send(f'@{ctx.author.name}, кража не удалась, тебя схватила стража! Ты в тюрьме на 5 минут.')
@@ -937,15 +839,13 @@ class RPGbot(commands.Bot):
         self.save_players()
 
     @commands.command(name='взятка')
+    @requires_character
     async def cmd_prison(self, ctx):
         """Заплатить взятку для выхода из тюрьмы."""
         user = ctx.author.name.lower()
-        if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, у тебя нет персонажа.')
-            return
-
         player = self.players[user]
         now = time.time()
+
         if not player.get('prison', False) or player.get('prison_until', 0) <= now:
             await ctx.send(f'{ctx.author.name}, ты не в тюрьме.')
             return
@@ -963,13 +863,10 @@ class RPGbot(commands.Bot):
         await ctx.send(f'@{ctx.author.name}, ты свободен!')
 
     @commands.command(name='таверна')
+    @requires_character
     async def cmd_tavern(self, ctx):
         """Посетить таверну для получения баффа на урон."""
         user = ctx.author.name.lower()
-        if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, сначала создай персонажа (!старт).')
-            return
-
         player = self.players[user]
         cost = 50
         now = time.time()
@@ -989,16 +886,13 @@ class RPGbot(commands.Bot):
         await ctx.send(f'🍺 {ctx.author.name}, ты отдохнул в таверне! В течение 30 минут +10% урона.')
 
     @commands.command(name='раса')
+    @requires_character
     async def cmd_race(self, ctx):
         """Выбрать расу для персонажа."""
         user = ctx.author.name.lower()
         parts = ctx.message.content.strip().split(maxsplit=1)
-
-        if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, сначала создай персонажа (!старт).')
-            return
-
         player = self.players[user]
+
         if len(parts) < 2:
             races = ', '.join(self.races.keys())
             await ctx.send(f'{ctx.author.name}, укажи расу: !раса <название>. Доступные расы: {races}')
@@ -1014,23 +908,19 @@ class RPGbot(commands.Bot):
             return
 
         player['race'] = race
-        # Обновляем HP при выборе расы
-        player['current_hp'] = calculate_hp(player['level']) + self.get_equipment_bonuses(player)[2]
+        player['current_hp'] = self.player_service.get_max_hp(player)
         self.save_players()
         logging.info(f"{user} выбрал расу {race}")
         await ctx.send(f'{ctx.author.name}, ты выбрал расу: {race.capitalize()}.')
 
     @commands.command(name='класс')
+    @requires_character
     async def cmd_class(self, ctx):
         """Выбрать класс для персонажа."""
         user = ctx.author.name.lower()
         parts = ctx.message.content.strip().split(maxsplit=1)
-
-        if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, сначала создай персонажа (!старт).')
-            return
-
         player = self.players[user]
+
         if len(parts) < 2:
             classes = ', '.join(self.classes.keys())
             await ctx.send(f'{ctx.author.name}, укажи класс: !класс <название>. Доступные классы: {classes}')
@@ -1046,23 +936,19 @@ class RPGbot(commands.Bot):
             return
 
         player['class'] = class_name
-        # Обновляем HP при выборе класса
-        player['current_hp'] = calculate_hp(player['level']) + self.get_equipment_bonuses(player)[2]
+        player['current_hp'] = self.player_service.get_max_hp(player)
         self.save_players()
         logging.info(f"{user} выбрал класс {class_name}")
         await ctx.send(f'{ctx.author.name}, ты выбрал класс: {class_name.capitalize()}.')
 
     @commands.command(name='отдых')
+    @requires_character
     async def cmd_full_heal(self, ctx):
         """Полностью восстановить HP за 5 золота."""
         user = ctx.author.name.lower()
-        if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, у тебя нет персонажа.')
-            return
-
         player = self.players[user]
         cost = 5
-        max_hp = calculate_hp(player['level']) + self.get_equipment_bonuses(player)[2]
+        max_hp = self.player_service.get_max_hp(player)
 
         if player['current_hp'] >= max_hp:
             await ctx.send(f'{ctx.author.name}, твоё здоровье и так полное!')
@@ -1079,59 +965,45 @@ class RPGbot(commands.Bot):
         await ctx.send(f'🩺 {ctx.author.name}, ты полностью восстановил HP за {cost} золота!')
 
     @commands.command(name='подарить')
+    @requires_character
     async def cmd_gift(self, ctx):
-        """Подарить любой предмет из инвентаря другому игроку"""
+        """Подарить предмет или золото другому игроку."""
         user = ctx.author.name.lower()
         parts = ctx.message.content.strip().split(maxsplit=2)
-
-        if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, у тебя нет персонажа.')
-            return
-
         player = self.players[user]
 
         if len(parts) != 3:
-            await ctx.send(f'@{user}, формат отправки подарка: !подарок <имя персонажа> <название предмета из инвентаря>')
+            await ctx.send(f'@{user}, формат: !подарить @ник <золото <сумма>|предмет>')
             return
 
-        if len(parts) == 3:
-            target = parts[1].lstrip('@').lower()
-            item = parts[2].capitalize()
-            item_slpit = item.split()
-            if target not in self.players:
-                await ctx.send(f'@{user}, {target} должен иметь персонажа!')
-                return
-            if item_slpit[0] == 'Золото':
-                if item_slpit[1].isalpha():
-                    await ctx.send(f'@{user}, ты хоть сам понял что хочешь?)')
-                    return
-                if int(item_slpit[1]) <= player['gold']:
-                    self.players[target]['gold'] += int(item_slpit[1])
-                    player['gold'] -= int(item_slpit[1])
-                    self.save_players()
-                    await ctx.send(f'@{user} подарил @{target} {int(item_slpit[1])} золотых монет!')
-                    return
-                elif int(item_slpit[1]) > player['gold']:
-                    await ctx.send(f'@{user}, у тебя нет столько золота!')
-                    return
+        target = parts[1].lstrip('@').lower()
+        gift = parts[2].strip()
 
-            if item in player['inventory']:
-                self.players[target]['inventory'].append(item)
-                player['inventory'].remove(item)
+        if target not in self.players:
+            await ctx.send(f'@{user}, {target} должен иметь персонажа!')
+            return
+
+        target_player = self.players[target]
+        gift_parts = gift.split()
+
+        if gift_parts[0].lower() == 'золото':
+            if len(gift_parts) < 2 or not gift_parts[1].isdigit():
+                await ctx.send(f'@{user}, ты хоть сам понял что хочешь?)')
+                return
+            ok, msg = self.inventory_service.gift_gold(player, target_player, int(gift_parts[1]))
+            if ok:
                 self.save_players()
-                await ctx.send(f'@{user} успешно передал @{target} предмет {item}')
-                return
+                await ctx.send(f'@{user} подарил @{target} {gift_parts[1]} золотых монет!')
+            else:
+                await ctx.send(f'@{user}, {msg}!')
+        else:
+            ok, msg = self.inventory_service.gift_item(player, target_player, gift)
+            if ok:
+                self.save_players()
+                await ctx.send(f'@{user} успешно передал @{target} предмет {gift}')
+            else:
+                await ctx.send(f'@{user}, {msg}!')
 
-            if item not in player['inventory']:
-                await ctx.send(f'@{user}, у тебя нет такого предмета в инвентаре!')
-                return
 
-# async def main():
-#     """Запуск бота."""
-#     bot = RPGbot()
-#     await bot.start()
-#
-# if __name__ == "__main__":
-#     asyncio.run(main())
 bot = RPGbot()
 bot.run()

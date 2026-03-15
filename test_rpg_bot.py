@@ -111,8 +111,27 @@ def _bot(players=None):
     Создать экземпляр RPGbot минуя __init__ и реальное подключение.
     save_players заменён на MagicMock — файлы не пишутся.
     """
+    from services.player_service import PlayerService
+    from services.combat_service import CombatService
+    from services.inventory_service import InventoryService
+
+    _classes = {
+        'воин': {'attack_bonus': (2, 5), 'hp_bonus': 10},
+        'маг':  {'attack_bonus': (0, 3), 'xp_bonus': 0.1},
+        'вор':  {'attack_bonus': (1, 4), 'steal_chance_bonus': 0.05},
+    }
+
     bot = object.__new__(rb.RPGbot)
-    bot.players = players if players is not None else {}
+
+    # Создаём player_service вручную (без load/save)
+    ps = object.__new__(PlayerService)
+    ps.players = players if players is not None else {}
+    ps.classes = _classes
+    ps.items = rb.ITEMS
+    bot.player_service = ps
+
+    bot.combat_service = CombatService()
+    bot.inventory_service = InventoryService()
     bot.black_market_items = []
     bot.black_market_last_refresh = 0
     bot.pending_duels = {}
@@ -121,11 +140,7 @@ def _bot(players=None):
         'эльф':    {'hp_bonus': 0, 'xp_bonus': 0.1},
         'орк':     {'hp_bonus': 10, 'xp_bonus': -0.05},
     }
-    bot.classes = {
-        'воин': {'attack_bonus': (2, 5), 'hp_bonus': 10},
-        'маг':  {'attack_bonus': (0, 3), 'xp_bonus': 0.1},
-        'вор':  {'attack_bonus': (1, 4), 'steal_chance_bonus': 0.05},
-    }
+    bot.classes = _classes
     bot.save_players = MagicMock()
     return bot
 
@@ -613,7 +628,7 @@ class TestCmdFight(unittest.IsolatedAsyncioTestCase):
         bot = _bot({'user': p})
         ctx = _ctx('user', '!бой Гоблин')
         ctx.message.content = '!бой Гоблин'
-        with patch('rpg_bot.calculate_damage', return_value=10000):
+        with patch('services.combat_service.calculate_damage', return_value=10000):
             await bot.cmd_fight(ctx)
         self.assertGreater(bot.players['user']['xp'], 0)
         self.assertGreater(bot.players['user']['gold'], 0)
@@ -624,7 +639,7 @@ class TestCmdFight(unittest.IsolatedAsyncioTestCase):
         bot = _bot({'user': p})
         ctx = _ctx('user', '!бой Гоблин')
         ctx.message.content = '!бой Гоблин'
-        with patch('rpg_bot.calculate_damage', return_value=0):
+        with patch('services.combat_service.calculate_damage', return_value=0):
             await bot.cmd_fight(ctx)
         # 10% XP потеря: 500 - 50 = 450
         self.assertEqual(bot.players['user']['xp'], 450)
@@ -1276,8 +1291,13 @@ class TestCmdDescription(unittest.IsolatedAsyncioTestCase):
 
 class TestSavePlayers(unittest.TestCase):
     def _real_bot(self, players):
+        from services.player_service import PlayerService
         bot = object.__new__(rb.RPGbot)
-        bot.players = players
+        ps = object.__new__(PlayerService)
+        ps.players = players
+        ps.classes = {}
+        ps.items = rb.ITEMS
+        bot.player_service = ps
         return bot
 
     def test_saves_data_to_file(self):
@@ -1483,7 +1503,7 @@ class TestCmdFightExtra(unittest.IsolatedAsyncioTestCase):
         ctx = _ctx('user', '!бой')
         # First random.choice → monster name, second → drop item
         choice_values = iter(['Гоблин', 'Деревянный меч'])
-        with patch('rpg_bot.calculate_damage', return_value=10000), \
+        with patch('services.combat_service.calculate_damage', return_value=10000), \
              patch('random.random', return_value=0.0), \
              patch('random.choice', side_effect=lambda seq: next(choice_values)), \
              patch('random.randint', return_value=10):
@@ -1496,7 +1516,7 @@ class TestCmdFightExtra(unittest.IsolatedAsyncioTestCase):
         bot = _bot({'user': p})
         ctx = _ctx('user', '!бой')
         # Choose a monster via choice, random.random > loot_chance → no drop
-        with patch('rpg_bot.calculate_damage', return_value=10000), \
+        with patch('services.combat_service.calculate_damage', return_value=10000), \
              patch('random.random', return_value=0.99), \
              patch('random.choice', side_effect=lambda seq: list(seq)[0] if hasattr(seq, '__len__') else seq), \
              patch('random.randint', return_value=5):
@@ -1578,7 +1598,7 @@ class TestCmdAcceptExtra(unittest.IsolatedAsyncioTestCase):
         bot = _bot({'alice': alice, 'bob': bob})
         bot.pending_duels['bob'] = {'challenger': 'alice', 'amount': 0}
         ctx = _ctx('bob', '!принять')
-        with patch('rpg_bot.calculate_damage', return_value=10000):
+        with patch('services.combat_service.calculate_damage', return_value=10000):
             with patch('random.random', return_value=0.0):  # alice goes first → wins
                 await bot.cmd_accept(ctx)
         all_text = ' '.join(c[0][0] for c in ctx.send.call_args_list)
@@ -1874,7 +1894,7 @@ class TestCmdAcceptCooldownAndDefenderWin(unittest.IsolatedAsyncioTestCase):
         ctx = _ctx('bob', '!принять')
         # alice = attacker (random < 0.5), alice hits 0 damage, bob kills alice
         dmg_iter = iter([0, 10000])
-        with patch('rpg_bot.calculate_damage', side_effect=lambda lvl: next(dmg_iter)), \
+        with patch('services.combat_service.calculate_damage', side_effect=lambda lvl: next(dmg_iter)), \
              patch('random.random', return_value=0.0), \
              patch('random.randint', return_value=0):
             await bot.cmd_accept(ctx)
@@ -1917,7 +1937,7 @@ class TestCmdHealNoGold(unittest.IsolatedAsyncioTestCase):
 
 class TestCmdStealCooldown(unittest.IsolatedAsyncioTestCase):
     async def test_steal_blocked_by_cooldown(self):
-        thief = _player(steal_time_unteal=time.time())  # fresh cooldown
+        thief = _player(last_steal_time=time.time())  # fresh cooldown
         victim = _player(inventory=['Деревянный меч'])
         bot = _bot({'user': thief, 'victim': victim})
         ctx = _ctx('user', '!кража @victim Деревянный меч')
