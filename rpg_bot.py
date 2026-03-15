@@ -1006,5 +1006,10 @@ class RPGbot(commands.Bot):
                 await ctx.send(f'@{user}, {msg}!')
 
 
-bot = RPGbot()
+MODE = os.getenv('MODE', 'twitch')
+if MODE == 'local':
+    from local_bot import LocalBot
+    bot = LocalBot()
+else:
+    bot = RPGbot()
 bot.run()
