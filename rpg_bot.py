@@ -839,7 +839,7 @@ class RPGbot(commands.Bot):
         else:
             now = time.time()
             player['prison'] = True
-            player['prison_until'] = now + 300
+            player['prison_until'] = now + 600
             await ctx.send(f'@{ctx.author.name}, кража не удалась, тебя схватила стража! Ты в тюрьме на 5 минут.')
             logging.info(f"{user} провалил кражу, отправлен в тюрьму")
         self.save_players()
