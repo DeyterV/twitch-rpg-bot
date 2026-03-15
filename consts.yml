@@ -166,6 +166,9 @@ races:
   орк:
     hp_bonus: 10
     xp_bonus: -0.05
+  фурри:
+    hp_bonus: 3
+    xp_bonus: 0.02
 
 classes:
   воин:
