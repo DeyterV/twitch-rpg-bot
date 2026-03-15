@@ -6,18 +6,23 @@ import time
 import shutil
 import logging
 from collections import Counter
+from dotenv import load_dotenv
 from filelock import FileLock
 from twitchio.ext import commands
 
 # Настройка логирования
 logging.basicConfig(filename='bot.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+load_dotenv()
+TOKEN = os.getenv('TOKEN')
+CHANNEL = os.getenv('CHANNEL')
+SAVE_FILE = os.getenv('SAVE_FILE', 'players.json')
+
 try:
-    from settings import TOKEN, CHANNEL, SAVE_FILE
     from consts import MONSTERS, ITEM_DESCRIPTIONS, ITEMS, BLACK_MARKET_ITEMS
 except ImportError as e:
-    logging.error(f"Ошибка импорта настроек или констант: {e}")
-    raise ImportError(f"Ошибка импорта настроек или констант: {e}")
+    logging.error(f"Ошибка импорта констант: {e}")
+    raise ImportError(f"Ошибка импорта констант: {e}")
 
 def calculate_hp(level):
     """Рассчитать максимальное HP персонажа по уровню."""
@@ -1072,12 +1077,13 @@ class RPGbot(commands.Bot):
     async def cmd_gift(self, ctx):
         """Подарить любой предмет из инвентаря другому игроку"""
         user = ctx.author.name.lower()
-        player = self.players[user]
         parts = ctx.message.content.strip().split(maxsplit=2)
 
         if user not in self.players:
             await ctx.send(f'{ctx.author.name}, у тебя нет персонажа.')
             return
+
+        player = self.players[user]
 
         if len(parts) != 3:
             await ctx.send(f'@{user}, формат отправки подарка: !подарок <имя персонажа> <название предмета из инвентаря>')

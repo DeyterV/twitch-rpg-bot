@@ -1,7 +1,9 @@
 # created by virtualenv automatically
 .venv
+.env
 settings.py
 players.json
 bot.log
 players.json.bak
 .idea
+__pycache__
