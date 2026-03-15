@@ -59,6 +59,7 @@ ITEMS = _load_yml('items.yml')
 BLACK_MARKET_ITEMS = _load_yml('black_market_items.yml')
 _RACES = _load_yml('races.yml')
 _CLASSES = _load_yml('classes.yml')
+MESSAGES = _load_yml('messages.yml')
 
 
 class RPGbot(commands.Bot):
@@ -169,7 +170,7 @@ class RPGbot(commands.Bot):
         """Обёртка: проверяет кулдаун и отправляет сообщение при необходимости."""
         ok, remain = self.player_service.check_cooldown(player, key, cooldown)
         if not ok:
-            await ctx.send(f'{ctx.author.name}, подожди {remain} секунд.')
+            await ctx.send(MESSAGES['cooldown'].format(name=ctx.author.name, remain=remain))
         return ok
 
     # ------------------------------------------------------------------
@@ -198,10 +199,10 @@ class RPGbot(commands.Bot):
         if now - self.black_market_last_refresh > BLACK_MARKET_REFRESH_INTERVAL or not self.black_market_items:
             self.refresh_black_market()
 
-        msg_lines = ['🕶️ Тёмный торговец шепчет:\nСегодня в продаже:']
+        msg_lines = [MESSAGES['bm_header']]
         for idx, item in enumerate(self.black_market_items, start=1):
-            msg_lines.append(f'{idx}. {item["name"]} — {item["price"]} золота ({item["description"]})')
-        msg_lines.append('Купи через команду !купить <номер>')
+            msg_lines.append(MESSAGES['bm_item'].format(idx=idx, name=item["name"], price=item["price"], description=item["description"]))
+        msg_lines.append(MESSAGES['bm_hint'])
 
         for line in msg_lines:
             await ctx.send(line)
@@ -214,19 +215,19 @@ class RPGbot(commands.Bot):
 
         parts = ctx.message.content.strip().split()
         if len(parts) != 2 or not parts[1].isdigit():
-            await ctx.send('Используй формат: !купить <номер>')
+            await ctx.send(MESSAGES['buy_format'])
             return
 
         choice = int(parts[1]) - 1
         if choice < 0 or choice >= len(self.black_market_items):
-            await ctx.send(f'{ctx.author.name}, нет такого товара.')
+            await ctx.send(MESSAGES['buy_no_item'].format(name=ctx.author.name))
             return
 
         player = self.players[user]
         item = self.black_market_items[choice]
 
         if player['gold'] < item['price']:
-            await ctx.send(f'{ctx.author.name}, у тебя недостаточно золота.')
+            await ctx.send(MESSAGES['buy_no_gold'].format(name=ctx.author.name))
             return
 
         player['gold'] -= item['price']
@@ -235,17 +236,17 @@ class RPGbot(commands.Bot):
         logging.info(f"{user} купил {item['name']} за {item['price']} золота")
 
         if item['type'] in ['pet', 'amulet', 'consumable']:
-            await ctx.send(f'{ctx.author.name}, ты приобрел {item["type"]}: {item["name"]}! '
-                           f'Используй {"!надеть" if item["type"] in ["pet", "amulet"] else "!использовать"} {item["name"]}.')
+            command = "!надеть" if item["type"] in ["pet", "amulet"] else "!использовать"
+            await ctx.send(MESSAGES['buy_equippable'].format(name=ctx.author.name, item_type=item["type"], item_name=item["name"], command=command))
         else:
-            await ctx.send(f'{ctx.author.name}, ты купил: {item["name"]}')
+            await ctx.send(MESSAGES['buy_success'].format(name=ctx.author.name, item_name=item["name"]))
 
     @commands.command(name='старт')
     async def cmd_start(self, ctx):
         """Создать нового персонажа."""
         user = ctx.author.name.lower()
         if user in self.players:
-            await ctx.send(f'{ctx.author.name}, ты уже начал игру!')
+            await ctx.send(MESSAGES['start_already'].format(name=ctx.author.name))
             return
 
         max_hp = calculate_hp(1)
@@ -269,7 +270,7 @@ class RPGbot(commands.Bot):
         }
         self.save_players()
         logging.info(f"Создан персонаж для {user}")
-        await ctx.send(f'{ctx.author.name}, персонаж создан! Уровень 1, XP 0, золото 0. Выбери расу (!раса) и класс (!класс).')
+        await ctx.send(MESSAGES['start_success'].format(name=ctx.author.name))
 
     @commands.command(name='статус')
     async def cmd_status(self, ctx):
@@ -278,7 +279,7 @@ class RPGbot(commands.Bot):
         target = parts[1].lstrip('@').lower() if len(parts) == 2 else ctx.author.name.lower()
 
         if target not in self.players:
-            await ctx.send(f'{ctx.author.name}, у {target} нет персонажа.')
+            await ctx.send(MESSAGES['status_no_character'].format(name=ctx.author.name, target=target))
             return
 
         p = self.players[target]
@@ -300,17 +301,17 @@ class RPGbot(commands.Bot):
         now = time.time()
         status = []
         if p.get('xp_buff_until', 0) > now:
-            status.append('📈 +50% XP (бордель)')
+            status.append(MESSAGES['status_xp_buff'])
         if p.get('xp_penalty', False):
-            status.append('⚠️ -50% XP (штраф)')
+            status.append(MESSAGES['status_xp_penalty'])
         if p.get('prison', False) and p.get('prison_until', 0) > now:
             remain = int(p['prison_until'] - now)
-            status.append(f'🔒 В тюрьме ({remain} сек.)')
+            status.append(MESSAGES['status_prison'].format(remain=remain))
         if p.get('attack_buff_until', 0) > now:
             remain = int(p['attack_buff_until'] - now)
-            status.append(f'⚔️ +10% урона ({remain} сек.)')
+            status.append(MESSAGES['status_attack_buff'].format(remain=remain))
         if status:
-            await ctx.send(f'{target}, активные эффекты: {", ".join(status)}')
+            await ctx.send(MESSAGES['status_effects'].format(target=target, effects=', '.join(status)))
 
     @commands.command(name='инвентарь')
     @requires_character
@@ -319,12 +320,12 @@ class RPGbot(commands.Bot):
         user = ctx.author.name.lower()
         inventory = self.players[user].get('inventory', [])
         if not inventory:
-            await ctx.send(f'@{ctx.author.name}, твой инвентарь пуст.')
+            await ctx.send(MESSAGES['inventory_empty'].format(name=ctx.author.name))
             return
 
         item_counts = Counter(inventory)
         formatted_items = [f'{item} x{count}' if count > 1 else item for item, count in item_counts.items()]
-        await ctx.send(f'@{ctx.author.name}, инвентарь: {", ".join(formatted_items)}')
+        await ctx.send(MESSAGES['inventory_list'].format(name=ctx.author.name, items=', '.join(formatted_items)))
 
     @commands.command(name='экипировка')
     @requires_character
@@ -336,7 +337,7 @@ class RPGbot(commands.Bot):
             f'{slot.capitalize()}: {equipment[slot] if equipment[slot] else "—"}'
             for slot in ['weapon', 'armor', 'helmet', 'pet', 'amulet']
         )
-        await ctx.send(f'🛡️ Экипировка {ctx.author.name}: {eq_text}')
+        await ctx.send(MESSAGES['equipment'].format(name=ctx.author.name, eq=eq_text))
 
     @commands.command(name='опыт')
     @requires_character
@@ -364,9 +365,9 @@ class RPGbot(commands.Bot):
         self.save_players()
         logging.info(f"{user} получил {base_xp} XP")
 
-        msg = f'{ctx.author.name}, получено {base_xp} XP. Текущий XP: {player["xp"]}'
+        msg = MESSAGES['xp_gained'].format(name=ctx.author.name, xp=base_xp, current_xp=player["xp"])
         if leveled:
-            msg += f' 📈 Уровень повышен! Теперь уровень {player["level"]}.'
+            msg += MESSAGES['xp_level_up'].format(level=player["level"])
         await ctx.send(msg)
 
     @commands.command(name='надеть')
@@ -397,7 +398,7 @@ class RPGbot(commands.Bot):
         parts = ctx.message.content.strip().split(maxsplit=1)
 
         if len(parts) < 2:
-            await ctx.send(f'{ctx.author.name}, укажи слот: !снять <weapon|armor|helmet|pet|amulet>')
+            await ctx.send(MESSAGES['unequip_format'].format(name=ctx.author.name))
             return
 
         slot = parts[1].strip().lower()
@@ -423,7 +424,7 @@ class RPGbot(commands.Bot):
         parts = ctx.message.content.strip().split(maxsplit=1)
 
         if len(parts) < 2:
-            await ctx.send(f'{ctx.author.name}, укажи предмет: !использовать <название>')
+            await ctx.send(MESSAGES['use_format'].format(name=ctx.author.name))
             return
 
         item_name = parts[1].strip()
@@ -449,7 +450,7 @@ class RPGbot(commands.Bot):
 
         if player.get('prison', False) and player.get('prison_until', 0) > now:
             remain = int(player['prison_until'] - now)
-            await ctx.send(f'@{ctx.author.name}, ты в тюрьме! Заплати взятку (!взятка) или жди {remain} сек.')
+            await ctx.send(MESSAGES['fight_prison'].format(name=ctx.author.name, remain=remain))
             return
 
         if not await self.check_cooldown(player, 'last_fight_time', _gc.CD_FIGHT, ctx):
@@ -472,7 +473,8 @@ class RPGbot(commands.Bot):
         )
 
         _m = MONSTERS[monster_name]
-        log = [f'{ctx.author.name} сражается с {monster_name}! (Монстр: HP {int(_m["base_hp"] * (1 + (level - 1) * _m.get("scale_multiplier", MOB_SCALE_MULTIPLIER_DEFAULT)))})']
+        monster_hp = int(_m["base_hp"] * (1 + (level - 1) * _m.get("scale_multiplier", MOB_SCALE_MULTIPLIER_DEFAULT)))
+        log = [MESSAGES['fight_start'].format(name=ctx.author.name, monster=monster_name, hp=monster_hp)]
 
         if result.won:
             player['xp'] += result.xp_gained
@@ -484,17 +486,17 @@ class RPGbot(commands.Bot):
             self.save_players()
             logging.info(f"{user} победил {monster_name}, получил {result.xp_gained} XP, {result.gold_gained} золота, дроп: {result.loot}")
 
-            msg = f'🏆 Победа за {result.rounds} ходов! +{result.xp_gained} XP, +{result.gold_gained} золота.'
+            msg = MESSAGES['fight_win'].format(rounds=result.rounds, xp=result.xp_gained, gold=result.gold_gained)
             if result.loot:
-                msg += f' Дроп: {result.loot}.'
+                msg += MESSAGES['fight_win_loot'].format(loot=result.loot)
             log.append(msg)
             if leveled:
-                log.append(f'📈 Уровень повышен! Текущий уровень: {player["level"]}')
+                log.append(MESSAGES['fight_level_up'].format(level=player["level"]))
         else:
             xp_loss = int(player['xp'] * XP_LOSS_ON_DEFEAT)
             player['xp'] = max(0, player['xp'] - xp_loss)
             player['current_hp'] = result.player_hp_left
-            log.append(f'💀 Поражение от {monster_name}... Потеряно {xp_loss} XP')
+            log.append(MESSAGES['fight_lose'].format(monster=monster_name, xp=xp_loss))
             self.save_players()
             logging.info(f"{user} проиграл {monster_name}, потеряно {xp_loss} XP")
 
@@ -505,11 +507,11 @@ class RPGbot(commands.Bot):
     async def cmd_top(self, ctx):
         """Показать топ-10 игроков по уровню и XP."""
         if not self.players:
-            await ctx.send('Нет данных для рейтинга.')
+            await ctx.send(MESSAGES['top_empty'])
             return
         top = sorted(self.players.items(), key=lambda i: (i[1]['level'], i[1]['xp']), reverse=True)[:10]
         result = ', '.join([f'{i + 1}. {name} (Lvl {p["level"]}, XP {p["xp"]})' for i, (name, p) in enumerate(top)])
-        await ctx.send(f'🏆 ТОП игроков: {result}')
+        await ctx.send(MESSAGES['top_result'].format(result=result))
 
     @commands.command(name='дуэль')
     async def cmd_duel(self, ctx):
@@ -518,26 +520,26 @@ class RPGbot(commands.Bot):
         parts = ctx.message.content.strip().split()
 
         if len(parts) < 2:
-            await ctx.send('Формат: !дуэль @ник [ставка]')
+            await ctx.send(MESSAGES['duel_format'])
             return
 
         target = parts[1].lstrip('@').lower()
         amount = int(parts[2]) if len(parts) >= 3 and parts[2].isdigit() and int(parts[2]) >= 0 else 0
 
         if challenger == target:
-            await ctx.send('Нельзя вызвать самого себя.')
+            await ctx.send(MESSAGES['duel_self'])
             return
 
         if challenger not in self.players or target not in self.players:
-            await ctx.send('Оба игрока должны иметь персонажей.')
+            await ctx.send(MESSAGES['duel_no_characters'])
             return
 
         if self.players[challenger]['gold'] < amount:
-            await ctx.send('Недостаточно золота для ставки.')
+            await ctx.send(MESSAGES['duel_no_gold'])
             return
 
         if target in self.pending_duels:
-            await ctx.send(f'{target} уже ожидает другой дуэли.')
+            await ctx.send(MESSAGES['duel_pending'].format(target=target))
             return
 
         cl = self.players[challenger]
@@ -550,11 +552,8 @@ class RPGbot(commands.Bot):
         tdmg = f'{DAMAGE_MIN_BASE + tl["level"] * DAMAGE_MIN_COEF + tl_bon[0]}-{DAMAGE_MAX_BASE + tl["level"] * DAMAGE_MAX_COEF + tl_bon[1]}'
 
         self.pending_duels[target] = {'challenger': challenger, 'amount': amount}
-        await ctx.send(
-            f'⚔️ {ctx.author.name} вызывает @{target} на дуэль{" со ставкой " + str(amount) + " золота" if amount else ""}!\n'
-            f'{ctx.author.name}: HP {chp}, Урон {cdmg}; @{target}: HP {thp}, Урон {tdmg}\n'
-            f'@{target}, напиши !принять чтобы принять вызов.'
-        )
+        bet = MESSAGES['duel_bet'].format(amount=amount) if amount else ''
+        await ctx.send(MESSAGES['duel_challenge'].format(challenger=ctx.author.name, target=target, bet=bet, chp=chp, cdmg=cdmg, thp=thp, tdmg=tdmg))
         logging.info(f"{challenger} вызвал {target} на дуэль с ставкой {amount}")
 
     @commands.command(name='принять')
@@ -566,11 +565,11 @@ class RPGbot(commands.Bot):
 
         if self.players[defender].get('prison', False) and self.players[defender].get('prison_until', 0) > now:
             remain = int(self.players[defender]['prison_until'] - now)
-            await ctx.send(f'@{ctx.author.name}, ты в тюрьме! Заплати взятку (!взятка) или жди {remain} сек.')
+            await ctx.send(MESSAGES['accept_prison'].format(name=ctx.author.name, remain=remain))
             return
 
         if defender not in self.pending_duels:
-            await ctx.send('Тебя никто не вызывал на дуэль.')
+            await ctx.send(MESSAGES['accept_no_challenge'])
             return
 
         duel = self.pending_duels.pop(defender)
@@ -578,7 +577,7 @@ class RPGbot(commands.Bot):
         amount = duel['amount']
 
         if challenger not in self.players:
-            await ctx.send('Игрок-вызывающий не найден.')
+            await ctx.send(MESSAGES['accept_no_challenger'])
             return
 
         a = self.players[challenger]
@@ -589,7 +588,7 @@ class RPGbot(commands.Bot):
             return
 
         if amount > 0 and (a['gold'] < amount or d['gold'] < amount):
-            await ctx.send('У кого-то не хватает золота.')
+            await ctx.send(MESSAGES['accept_no_gold'])
             return
 
         if amount > 0:
@@ -612,11 +611,11 @@ class RPGbot(commands.Bot):
         result.winner_p['current_hp'] = max(1, result.hp_winner_left)
         result.loser_p['current_hp'] = self.player_service.get_max_hp(result.loser_p) // HP_RESTORE_RATIO
 
-        gold_msg = f' и {amount * DUEL_BET_WIN_MULTIPLIER} золота' if amount > 0 else ''
+        gold_msg = MESSAGES['accept_gold_msg'].format(gold=amount * DUEL_BET_WIN_MULTIPLIER) if amount > 0 else ''
         result.winner_p['xp'] += result.xp_reward
         level_msg = ''
         if self.try_level_up(result.winner_p):
-            level_msg = f'📈 {result.winner} повышает уровень! Теперь уровень {result.winner_p["level"]}.'
+            level_msg = MESSAGES['accept_level_up'].format(winner=result.winner, level=result.winner_p["level"])
 
         result.winner_p['pvp_wins'] = result.winner_p.get('pvp_wins', 0) + 1
         result.loser_p['pvp_losses'] = result.loser_p.get('pvp_losses', 0) + 1
@@ -625,7 +624,7 @@ class RPGbot(commands.Bot):
         self.save_players()
         logging.info(f"Дуэль: {result.winner} победил {result.loser}, получил {result.xp_reward} XP{gold_msg}")
 
-        await ctx.send(f'🏁 Побеждает {result.winner}, получает {result.xp_reward} XP{gold_msg}!')
+        await ctx.send(MESSAGES['accept_win'].format(winner=result.winner, xp=result.xp_reward, gold_msg=gold_msg))
         if level_msg:
             await ctx.send(level_msg)
 
@@ -635,17 +634,17 @@ class RPGbot(commands.Bot):
         user = ctx.author.name.lower()
         if user in self.pending_duels:
             self.pending_duels.pop(user)
-            await ctx.send(f'{ctx.author.name}, твой вызов на дуэль отменён.')
+            await ctx.send(MESSAGES['cancel_incoming'].format(name=ctx.author.name))
             logging.info(f"{user} отменил входящий вызов на дуэль")
             return
 
         for target, duel in list(self.pending_duels.items()):
             if duel['challenger'] == user:
                 self.pending_duels.pop(target)
-                await ctx.send(f'{ctx.author.name}, ты отменил вызов дуэли @{target}.')
+                await ctx.send(MESSAGES['cancel_outgoing'].format(name=ctx.author.name, target=target))
                 logging.info(f"{user} отменил вызов дуэли для {target}")
                 return
-        await ctx.send(f'{ctx.author.name}, у тебя нет активных вызовов на дуэль.')
+        await ctx.send(MESSAGES['cancel_none'].format(name=ctx.author.name))
 
     @commands.command(name='пвп')
     @requires_character
@@ -657,7 +656,7 @@ class RPGbot(commands.Bot):
         losses = p.get('pvp_losses', 0)
         total = wins + losses
         winrate = f"{(wins / total * 100):.1f}%" if total > 0 else "–"
-        await ctx.send(f'{ctx.author.name}, PvP: Победы: {wins}, Поражения: {losses}, Winrate: {winrate}')
+        await ctx.send(MESSAGES['pvp_stats'].format(name=ctx.author.name, wins=wins, losses=losses, winrate=winrate))
 
     @commands.command(name='описание')
     async def cmd_description(self, ctx):
@@ -669,18 +668,18 @@ class RPGbot(commands.Bot):
             item_name = parts[1].strip().lower()
             description = ITEM_DESCRIPTIONS.get(item_name)
             if description:
-                await ctx.send(f'Описание {parts[1].strip()}: {description}')
+                await ctx.send(MESSAGES['desc_found'].format(item=parts[1].strip(), description=description))
             else:
-                await ctx.send(f'{ctx.author.name}, описание для "{parts[1].strip()}" не найдено.')
+                await ctx.send(MESSAGES['desc_not_found'].format(name=ctx.author.name, item=parts[1].strip()))
             return
 
         if user not in self.players:
-            await ctx.send(f'{ctx.author.name}, у тебя нет персонажа.')
+            await ctx.send(MESSAGES['desc_no_character'].format(name=ctx.author.name))
             return
 
         inventory = self.players[user].get('inventory', [])
         if not inventory:
-            await ctx.send(f'{ctx.author.name}, у тебя пустой инвентарь.')
+            await ctx.send(MESSAGES['desc_empty'].format(name=ctx.author.name))
             return
 
         unique_items = list(set(inventory))
@@ -688,12 +687,11 @@ class RPGbot(commands.Bot):
             item_name = unique_items[0].lower()
             description = ITEM_DESCRIPTIONS.get(item_name)
             if description:
-                await ctx.send(f'Описание {unique_items[0]}: {description}')
+                await ctx.send(MESSAGES['desc_found'].format(item=unique_items[0], description=description))
             else:
-                await ctx.send(f'{ctx.author.name}, описание для "{unique_items[0]}" не найдено.')
+                await ctx.send(MESSAGES['desc_not_found'].format(name=ctx.author.name, item=unique_items[0]))
         else:
-            await ctx.send(f'{ctx.author.name}, укажи название предмета: !описание <название>. '
-                           f'Инвентарь: {", ".join(unique_items)}')
+            await ctx.send(MESSAGES['desc_specify'].format(name=ctx.author.name, items=', '.join(unique_items)))
 
     @commands.command(name='бордель')
     @requires_character
@@ -705,23 +703,21 @@ class RPGbot(commands.Bot):
         now = time.time()
 
         if player['gold'] < cost:
-            await ctx.send(f'{ctx.author.name}, у тебя недостаточно золота (нужно {cost}).')
+            await ctx.send(MESSAGES['brothel_no_gold'].format(name=ctx.author.name, cost=cost))
             return
 
         if player.get('xp_buff_until', 0) > now:
-            await ctx.send(f'{ctx.author.name}, эффект уже активен. Подожди, пока он закончится.')
+            await ctx.send(MESSAGES['brothel_active'].format(name=ctx.author.name))
             return
 
         player['gold'] -= cost
         if random.random() < BROTHEL_PENALTY_CHANCE:
             player['xp_penalty'] = True
-            await ctx.send(
-                f'💋 {ctx.author.name}, ты подцепил что-то... XP уменьшается на 50%! Используй !лечиться за 50 золота.')
+            await ctx.send(MESSAGES['brothel_penalty'].format(name=ctx.author.name))
             logging.info(f"{user} получил штраф XP в борделе")
         else:
             player['xp_buff_until'] = now + BROTHEL_BUFF_DURATION
-            await ctx.send(
-                f'💃 {ctx.author.name}, ты вдохновлён! В течение 30 минут +50% XP.')
+            await ctx.send(MESSAGES['brothel_buff'].format(name=ctx.author.name))
             logging.info(f"{user} получил бафф XP в борделе")
         self.save_players()
 
@@ -734,18 +730,18 @@ class RPGbot(commands.Bot):
         cost = HEAL_COST
 
         if not player.get('xp_penalty'):
-            await ctx.send(f'{ctx.author.name}, тебе не нужно лечение.')
+            await ctx.send(MESSAGES['heal_not_needed'].format(name=ctx.author.name))
             return
 
         if player['gold'] < cost:
-            await ctx.send(f'{ctx.author.name}, у тебя недостаточно золота (нужно {cost}).')
+            await ctx.send(MESSAGES['heal_no_gold'].format(name=ctx.author.name, cost=cost))
             return
 
         player['gold'] -= cost
         player['xp_penalty'] = False
         self.save_players()
         logging.info(f"{user} вылечился от штрафа XP")
-        await ctx.send(f'🧼 {ctx.author.name}, ты вылечился и готов к приключениям!')
+        await ctx.send(MESSAGES['heal_success'].format(name=ctx.author.name))
 
     @commands.command(name='продать')
     @requires_character
@@ -755,7 +751,7 @@ class RPGbot(commands.Bot):
         parts = ctx.message.content.strip().split(maxsplit=1)
 
         if len(parts) != 2:
-            await ctx.send(f'{ctx.author.name}, укажи предмет: !продать <название>')
+            await ctx.send(MESSAGES['sell_format'].format(name=ctx.author.name))
             return
 
         item_name = parts[1].strip()
@@ -763,11 +759,11 @@ class RPGbot(commands.Bot):
         actual = self.inventory_service.find_item(player, item_name)
 
         if actual is None:
-            await ctx.send(f'{ctx.author.name}, у тебя нет предмета "{item_name}".')
+            await ctx.send(MESSAGES['sell_no_item'].format(name=ctx.author.name, item=item_name))
             return
 
         if actual not in ITEMS or 'price' not in ITEMS[actual]:
-            await ctx.send(f'{ctx.author.name}, этот предмет нельзя продать.')
+            await ctx.send(MESSAGES['sell_not_sellable'].format(name=ctx.author.name))
             return
 
         sell_price = ITEMS[actual]['price'] // SELL_PRICE_RATIO
@@ -775,7 +771,7 @@ class RPGbot(commands.Bot):
         player['gold'] += sell_price
         self.save_players()
         logging.info(f"{user} продал {actual} за {sell_price} золота")
-        await ctx.send(f'{ctx.author.name}, ты продал "{actual}" за {sell_price} золота.')
+        await ctx.send(MESSAGES['sell_success'].format(name=ctx.author.name, item=actual, price=sell_price))
 
     @commands.command(name='оценить')
     @requires_character
@@ -785,7 +781,7 @@ class RPGbot(commands.Bot):
         parts = ctx.message.content.strip().split(maxsplit=1)
 
         if len(parts) < 2:
-            await ctx.send(f'{ctx.author.name}, укажи предмет: !оценить <название>')
+            await ctx.send(MESSAGES['appraise_format'].format(name=ctx.author.name))
             return
 
         item_name = parts[1].strip()
@@ -793,16 +789,16 @@ class RPGbot(commands.Bot):
         actual = self.inventory_service.find_item(player, item_name)
 
         if actual is None:
-            await ctx.send(f'{ctx.author.name}, у тебя нет предмета "{item_name}".')
+            await ctx.send(MESSAGES['appraise_no_item'].format(name=ctx.author.name, item=item_name))
             return
 
         if actual not in ITEMS:
-            await ctx.send(f'{ctx.author.name}, предмет "{actual}" не подлежит продаже.')
+            await ctx.send(MESSAGES['appraise_not_sellable'].format(name=ctx.author.name, item=actual))
             return
 
         price = ITEMS[actual].get('price', 0)
         sell_price = max(price // SELL_PRICE_RATIO, MIN_SELL_PRICE)
-        await ctx.send(f'{ctx.author.name}, ты можешь продать "{actual}" за {sell_price} золота.')
+        await ctx.send(MESSAGES['appraise_result'].format(name=ctx.author.name, item=actual, price=sell_price))
 
     @commands.command(name='кража')
     @requires_character
@@ -812,18 +808,18 @@ class RPGbot(commands.Bot):
         parts = ctx.message.content.strip().split(maxsplit=2)
 
         if len(parts) < 3:
-            await ctx.send(f'{ctx.author.name}, формат: !кража @ник <предмет>')
+            await ctx.send(MESSAGES['steal_format'].format(name=ctx.author.name))
             return
 
         target = parts[1].lstrip('@').lower()
         item_name = parts[2].strip()
 
         if target == user:
-            await ctx.send(f'{ctx.author.name}, нельзя украсть у себя.')
+            await ctx.send(MESSAGES['steal_self'].format(name=ctx.author.name))
             return
 
         if target not in self.players:
-            await ctx.send(f'{target} не имеет персонажа.')
+            await ctx.send(MESSAGES['steal_no_target'].format(target=target))
             return
 
         player = self.players[user]
@@ -832,7 +828,7 @@ class RPGbot(commands.Bot):
 
         target_player = self.players[target]
         if self.inventory_service.find_item(target_player, item_name) is None:
-            await ctx.send(f'{ctx.author.name}, у @{target} нет предмета "{item_name}".')
+            await ctx.send(MESSAGES['steal_no_item'].format(name=ctx.author.name, target=target, item=item_name))
             return
 
         steal_chance = BASE_STEAL_CHANCE + (
@@ -846,13 +842,13 @@ class RPGbot(commands.Bot):
             actual = self.inventory_service.find_item(target_player, item_name)
             player['inventory'].append(actual)
             target_player['inventory'].remove(actual)
-            await ctx.send(f'{ctx.author.name}, {actual} успешно украден у @{target}!')
+            await ctx.send(MESSAGES['steal_success'].format(name=ctx.author.name, item=actual, target=target))
             logging.info(f"{user} украл {actual} у {target}")
         else:
             now = time.time()
             player['prison'] = True
             player['prison_until'] = now + STEAL_PRISON_DURATION
-            await ctx.send(f'@{ctx.author.name}, кража не удалась, тебя схватила стража! Ты в тюрьме на 5 минут.')
+            await ctx.send(MESSAGES['steal_fail'].format(name=ctx.author.name))
             logging.info(f"{user} провалил кражу, отправлен в тюрьму")
         self.save_players()
 
@@ -865,12 +861,12 @@ class RPGbot(commands.Bot):
         now = time.time()
 
         if not player.get('prison', False) or player.get('prison_until', 0) <= now:
-            await ctx.send(f'{ctx.author.name}, ты не в тюрьме.')
+            await ctx.send(MESSAGES['prison_not_in'].format(name=ctx.author.name))
             return
 
         cost = BRIBE_COST
         if player['gold'] < cost:
-            await ctx.send(f'{ctx.author.name}, у тебя недостаточно золота (нужно {cost}).')
+            await ctx.send(MESSAGES['prison_no_gold'].format(name=ctx.author.name, cost=cost))
             return
 
         player['gold'] -= cost
@@ -878,7 +874,7 @@ class RPGbot(commands.Bot):
         player['prison_until'] = 0
         self.save_players()
         logging.info(f"{user} заплатил взятку и вышел из тюрьмы")
-        await ctx.send(f'@{ctx.author.name}, ты свободен!')
+        await ctx.send(MESSAGES['prison_free'].format(name=ctx.author.name))
 
     @commands.command(name='таверна')
     @requires_character
@@ -890,18 +886,18 @@ class RPGbot(commands.Bot):
         now = time.time()
 
         if player.get('attack_buff_until', 0) > now:
-            await ctx.send(f'{ctx.author.name}, бафф уже активен. Подожди, пока он закончится.')
+            await ctx.send(MESSAGES['tavern_active'].format(name=ctx.author.name))
             return
 
         if player['gold'] < cost:
-            await ctx.send(f'{ctx.author.name}, у тебя недостаточно золота (нужно {cost}).')
+            await ctx.send(MESSAGES['tavern_no_gold'].format(name=ctx.author.name, cost=cost))
             return
 
         player['gold'] -= cost
         player['attack_buff_until'] = now + TAVERN_BUFF_DURATION
         self.save_players()
         logging.info(f"{user} получил бафф урона в таверне")
-        await ctx.send(f'🍺 {ctx.author.name}, ты отдохнул в таверне! В течение 30 минут +10% урона.')
+        await ctx.send(MESSAGES['tavern_buff'].format(name=ctx.author.name))
 
     @commands.command(name='раса')
     @requires_character
@@ -913,23 +909,23 @@ class RPGbot(commands.Bot):
 
         if len(parts) < 2:
             races = ', '.join(self.races.keys())
-            await ctx.send(f'{ctx.author.name}, укажи расу: !раса <название>. Доступные расы: {races}')
+            await ctx.send(MESSAGES['race_format'].format(name=ctx.author.name, races=races))
             return
 
         race = parts[1].strip().lower()
         if race not in self.races:
-            await ctx.send(f'{ctx.author.name}, раса "{race}" не существует.')
+            await ctx.send(MESSAGES['race_not_found'].format(name=ctx.author.name, race=race))
             return
 
         if player.get('race'):
-            await ctx.send(f'{ctx.author.name}, ты уже выбрал расу: {player["race"]}.')
+            await ctx.send(MESSAGES['race_already'].format(name=ctx.author.name, race=player["race"]))
             return
 
         player['race'] = race
         player['current_hp'] = self.player_service.get_max_hp(player)
         self.save_players()
         logging.info(f"{user} выбрал расу {race}")
-        await ctx.send(f'{ctx.author.name}, ты выбрал расу: {race.capitalize()}.')
+        await ctx.send(MESSAGES['race_success'].format(name=ctx.author.name, race=race.capitalize()))
 
     @commands.command(name='класс')
     @requires_character
@@ -941,23 +937,23 @@ class RPGbot(commands.Bot):
 
         if len(parts) < 2:
             classes = ', '.join(self.classes.keys())
-            await ctx.send(f'{ctx.author.name}, укажи класс: !класс <название>. Доступные классы: {classes}')
+            await ctx.send(MESSAGES['class_format'].format(name=ctx.author.name, classes=classes))
             return
 
         class_name = parts[1].strip().lower()
         if class_name not in self.classes:
-            await ctx.send(f'{ctx.author.name}, класс "{class_name}" не существует.')
+            await ctx.send(MESSAGES['class_not_found'].format(name=ctx.author.name, class_name=class_name))
             return
 
         if player.get('class'):
-            await ctx.send(f'{ctx.author.name}, ты уже выбрал класс: {player["class"]}.')
+            await ctx.send(MESSAGES['class_already'].format(name=ctx.author.name, class_name=player["class"]))
             return
 
         player['class'] = class_name
         player['current_hp'] = self.player_service.get_max_hp(player)
         self.save_players()
         logging.info(f"{user} выбрал класс {class_name}")
-        await ctx.send(f'{ctx.author.name}, ты выбрал класс: {class_name.capitalize()}.')
+        await ctx.send(MESSAGES['class_success'].format(name=ctx.author.name, class_name=class_name.capitalize()))
 
     @commands.command(name='отдых')
     @requires_character
@@ -969,18 +965,18 @@ class RPGbot(commands.Bot):
         max_hp = self.player_service.get_max_hp(player)
 
         if player['current_hp'] >= max_hp:
-            await ctx.send(f'{ctx.author.name}, твоё здоровье и так полное!')
+            await ctx.send(MESSAGES['rest_full'].format(name=ctx.author.name))
             return
 
         if player['gold'] < cost:
-            await ctx.send(f'{ctx.author.name}, у тебя недостаточно золота (нужно {cost}).')
+            await ctx.send(MESSAGES['rest_no_gold'].format(name=ctx.author.name, cost=cost))
             return
 
         player['gold'] -= cost
         player['current_hp'] = max_hp
         self.save_players()
         logging.info(f"{user} полностью восстановил HP за {cost} золота")
-        await ctx.send(f'🩺 {ctx.author.name}, ты полностью восстановил HP за {cost} золота!')
+        await ctx.send(MESSAGES['rest_success'].format(name=ctx.author.name, cost=cost))
 
     @commands.command(name='подарить')
     @requires_character
@@ -991,7 +987,7 @@ class RPGbot(commands.Bot):
         player = self.players[user]
 
         if len(parts) != 3:
-            await ctx.send(f'@{user}, формат отправки подарка: !подарить <имя персонажа> <название предмета из инвентаря>')
+            await ctx.send(MESSAGES['gift_format'].format(user=user))
             return
 
         target = parts[1].lstrip('@').lower()
@@ -999,36 +995,36 @@ class RPGbot(commands.Bot):
         item_parts = item.split()
 
         if target not in self.players:
-            await ctx.send(f'@{user}, {target} должен иметь персонажа!')
+            await ctx.send(MESSAGES['gift_no_target'].format(user=user, target=target))
             return
 
         target_player = self.players[target]
 
         if item_parts[0] == 'Золото':
             if len(item_parts) < 2 or not item_parts[1].isdigit():
-                await ctx.send(f'@{user}, ты хоть сам понял что хочешь?)')
+                await ctx.send(MESSAGES['gift_gold_invalid'].format(user=user))
                 return
             ok, msg = self.inventory_service.gift_gold(player, target_player, int(item_parts[1]))
             if ok:
                 self.save_players()
-                await ctx.send(f'@{user} подарил @{target} {item_parts[1]} золотых монет!')
+                await ctx.send(MESSAGES['gift_gold_success'].format(user=user, target=target, amount=item_parts[1]))
             else:
-                await ctx.send(f'@{user}, {msg}!')
+                await ctx.send(MESSAGES['gift_service_error'].format(user=user, msg=msg))
             return
 
         ok, msg = self.inventory_service.gift_item(player, target_player, item)
         if ok:
             self.save_players()
-            await ctx.send(f'@{user} успешно передал @{target} предмет {item}')
+            await ctx.send(MESSAGES['gift_item_success'].format(user=user, target=target, item=item))
         else:
-            await ctx.send(f'@{user}, {msg}!')
+            await ctx.send(MESSAGES['gift_service_error'].format(user=user, msg=msg))
 
 
     @commands.command(name='команды')
     async def cmd_commands(self, ctx):
         """Отправить ссылку на список команд."""
         user = ctx.author.name.lower()
-        await ctx.send(f'@{user} для просмотра команд иди в описание канала!')
+        await ctx.send(MESSAGES['commands_hint'].format(user=user))
 
     @commands.command(name='милостыня')
     @requires_character
@@ -1039,13 +1035,13 @@ class RPGbot(commands.Bot):
         player = self.players[user]
         if player['alms_unteal'] >= now:
             remain = int(player['alms_unteal'] - now) + 1
-            await ctx.send(f'@{user}, шел бы ты, пока люлей не дали! До следующей попытки {remain} секунд.')
+            await ctx.send(MESSAGES['alms_cooldown'].format(user=user, remain=remain))
             return
         gold_given = random.choice(ALMS_CHOICES)
         player['alms_unteal'] = now + CD_ALMS
         player['gold'] += gold_given
         self.save_players()
-        await ctx.send(f'@{user}, тебе дали {gold_given} монет/у, благодари господа!')
+        await ctx.send(MESSAGES['alms_success'].format(user=user, gold=gold_given))
 
 
 if __name__ == '__main__':  # pragma: no cover

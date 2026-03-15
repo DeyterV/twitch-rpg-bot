@@ -1,0 +1,162 @@
+# Общие
+no_character: "{name}, у тебя нет персонажа."
+cooldown: "{name}, подожди {remain} секунд."
+
+# !черныйрынок
+bm_header: "🕶️ Тёмный торговец шепчет:\nСегодня в продаже:"
+bm_item: "{idx}. {name} — {price} золота ({description})"
+bm_hint: "Купи через команду !купить <номер>"
+
+# !купить
+buy_format: "Используй формат: !купить <номер>"
+buy_no_item: "{name}, нет такого товара."
+buy_no_gold: "{name}, у тебя недостаточно золота."
+buy_equippable: "{name}, ты приобрел {item_type}: {item_name}! Используй {command} {item_name}."
+buy_success: "{name}, ты купил: {item_name}"
+
+# !старт
+start_already: "{name}, ты уже начал игру!"
+start_success: "{name}, персонаж создан! Уровень 1, XP 0, золото 0. Выбери расу (!раса) и класс (!класс)."
+
+# !статус
+status_no_character: "{name}, у {target} нет персонажа."
+status_effects: "{target}, активные эффекты: {effects}"
+status_xp_buff: "📈 +50% XP (бордель)"
+status_xp_penalty: "⚠️ -50% XP (штраф)"
+status_prison: "🔒 В тюрьме ({remain} сек.)"
+status_attack_buff: "⚔️ +10% урона ({remain} сек.)"
+
+# !инвентарь
+inventory_empty: "@{name}, твой инвентарь пуст."
+inventory_list: "@{name}, инвентарь: {items}"
+
+# !экипировка
+equipment: "🛡️ Экипировка {name}: {eq}"
+
+# !опыт
+xp_gained: "{name}, получено {xp} XP. Текущий XP: {current_xp}"
+xp_level_up: " 📈 Уровень повышен! Теперь уровень {level}."
+
+# !снять
+unequip_format: "{name}, укажи слот: !снять <weapon|armor|helmet|pet|amulet>"
+
+# !использовать
+use_format: "{name}, укажи предмет: !использовать <название>"
+
+# !бой
+fight_prison: "@{name}, ты в тюрьме! Заплати взятку (!взятка) или жди {remain} сек."
+fight_start: "{name} сражается с {monster}! (Монстр: HP {hp})"
+fight_win: "🏆 Победа за {rounds} ходов! +{xp} XP, +{gold} золота."
+fight_win_loot: " Дроп: {loot}."
+fight_level_up: "📈 Уровень повышен! Текущий уровень: {level}"
+fight_lose: "💀 Поражение от {monster}... Потеряно {xp} XP"
+
+# !топ
+top_empty: "Нет данных для рейтинга."
+top_result: "🏆 ТОП игроков: {result}"
+
+# !дуэль
+duel_format: "Формат: !дуэль @ник [ставка]"
+duel_self: "Нельзя вызвать самого себя."
+duel_no_characters: "Оба игрока должны иметь персонажей."
+duel_no_gold: "Недостаточно золота для ставки."
+duel_pending: "{target} уже ожидает другой дуэли."
+duel_challenge: "⚔️ {challenger} вызывает @{target} на дуэль{bet}!\n{challenger}: HP {chp}, Урон {cdmg}; @{target}: HP {thp}, Урон {tdmg}\n@{target}, напиши !принять чтобы принять вызов."
+duel_bet: " со ставкой {amount} золота"
+
+# !принять
+accept_prison: "@{name}, ты в тюрьме! Заплати взятку (!взятка) или жди {remain} сек."
+accept_no_challenge: "Тебя никто не вызывал на дуэль."
+accept_no_challenger: "Игрок-вызывающий не найден."
+accept_no_gold: "У кого-то не хватает золота."
+accept_win: "🏁 Побеждает {winner}, получает {xp} XP{gold_msg}!"
+accept_gold_msg: " и {gold} золота"
+accept_level_up: "📈 {winner} повышает уровень! Теперь уровень {level}."
+
+# !отмена
+cancel_incoming: "{name}, твой вызов на дуэль отменён."
+cancel_outgoing: "{name}, ты отменил вызов дуэли @{target}."
+cancel_none: "{name}, у тебя нет активных вызовов на дуэль."
+
+# !пвп
+pvp_stats: "{name}, PvP: Победы: {wins}, Поражения: {losses}, Winrate: {winrate}"
+
+# !описание
+desc_found: "Описание {item}: {description}"
+desc_not_found: "{name}, описание для \"{item}\" не найдено."
+desc_no_character: "{name}, у тебя нет персонажа."
+desc_empty: "{name}, у тебя пустой инвентарь."
+desc_specify: "{name}, укажи название предмета: !описание <название>. Инвентарь: {items}"
+
+# !бордель
+brothel_no_gold: "{name}, у тебя недостаточно золота (нужно {cost})."
+brothel_active: "{name}, эффект уже активен. Подожди, пока он закончится."
+brothel_penalty: "💋 {name}, ты подцепил что-то... XP уменьшается на 50%! Используй !лечиться за 50 золота."
+brothel_buff: "💃 {name}, ты вдохновлён! В течение 30 минут +50% XP."
+
+# !лечиться
+heal_not_needed: "{name}, тебе не нужно лечение."
+heal_no_gold: "{name}, у тебя недостаточно золота (нужно {cost})."
+heal_success: "🧼 {name}, ты вылечился и готов к приключениям!"
+
+# !продать
+sell_format: "{name}, укажи предмет: !продать <название>"
+sell_no_item: "{name}, у тебя нет предмета \"{item}\"."
+sell_not_sellable: "{name}, этот предмет нельзя продать."
+sell_success: "{name}, ты продал \"{item}\" за {price} золота."
+
+# !оценить
+appraise_format: "{name}, укажи предмет: !оценить <название>"
+appraise_no_item: "{name}, у тебя нет предмета \"{item}\"."
+appraise_not_sellable: "{name}, предмет \"{item}\" не подлежит продаже."
+appraise_result: "{name}, ты можешь продать \"{item}\" за {price} золота."
+
+# !кража
+steal_format: "{name}, формат: !кража @ник <предмет>"
+steal_self: "{name}, нельзя украсть у себя."
+steal_no_target: "{target} не имеет персонажа."
+steal_no_item: "{name}, у @{target} нет предмета \"{item}\"."
+steal_success: "{name}, {item} успешно украден у @{target}!"
+steal_fail: "@{name}, кража не удалась, тебя схватила стража! Ты в тюрьме на 5 минут."
+
+# !взятка
+prison_not_in: "{name}, ты не в тюрьме."
+prison_no_gold: "{name}, у тебя недостаточно золота (нужно {cost})."
+prison_free: "@{name}, ты свободен!"
+
+# !таверна
+tavern_active: "{name}, бафф уже активен. Подожди, пока он закончится."
+tavern_no_gold: "{name}, у тебя недостаточно золота (нужно {cost})."
+tavern_buff: "🍺 {name}, ты отдохнул в таверне! В течение 30 минут +10% урона."
+
+# !раса
+race_format: "{name}, укажи расу: !раса <название>. Доступные расы: {races}"
+race_not_found: "{name}, раса \"{race}\" не существует."
+race_already: "{name}, ты уже выбрал расу: {race}."
+race_success: "{name}, ты выбрал расу: {race}."
+
+# !класс
+class_format: "{name}, укажи класс: !класс <название>. Доступные классы: {classes}"
+class_not_found: "{name}, класс \"{class_name}\" не существует."
+class_already: "{name}, ты уже выбрал класс: {class_name}."
+class_success: "{name}, ты выбрал класс: {class_name}."
+
+# !отдых
+rest_full: "{name}, твоё здоровье и так полное!"
+rest_no_gold: "{name}, у тебя недостаточно золота (нужно {cost})."
+rest_success: "🩺 {name}, ты полностью восстановил HP за {cost} золота!"
+
+# !подарить
+gift_format: "@{user}, формат отправки подарка: !подарить <имя персонажа> <название предмета из инвентаря>"
+gift_no_target: "@{user}, {target} должен иметь персонажа!"
+gift_gold_invalid: "@{user}, ты хоть сам понял что хочешь?)"
+gift_gold_success: "@{user} подарил @{target} {amount} золотых монет!"
+gift_item_success: "@{user} успешно передал @{target} предмет {item}"
+gift_service_error: "@{user}, {msg}!"
+
+# !команды
+commands_hint: "@{user} для просмотра команд иди в описание канала!"
+
+# !милостыня
+alms_cooldown: "@{user}, шел бы ты, пока люлей не дали! До следующей попытки {remain} секунд."
+alms_success: "@{user}, тебе дали {gold} монет/у, благодари господа!"
