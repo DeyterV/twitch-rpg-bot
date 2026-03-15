@@ -64,6 +64,6 @@ class PlayerService:
         now = time.time()
         last_time = player.get(key, 0)
         if now - last_time < cooldown:
-            return False, int(cooldown - (now - last_time))
+            return False, int(cooldown - (now - last_time)) + 1
         player[key] = now
         return True, 0
