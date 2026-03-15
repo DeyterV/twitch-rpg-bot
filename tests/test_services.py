@@ -125,5 +125,43 @@ class TestCheckCooldown(unittest.IsolatedAsyncioTestCase):
         self.assertIn('секунд', msg)
 
 
+class TestPlayerServiceInit(unittest.TestCase):
+    def test_init_stores_classes_and_items(self):
+        from services.player_service import PlayerService
+        ps = PlayerService({'воин': {}}, {'меч': {}})
+        self.assertEqual(ps.players, {})
+        self.assertIn('воин', ps.classes)
+        self.assertIn('меч', ps.items)
+
+
+class TestInventoryServiceExtra(unittest.TestCase):
+    def setUp(self):
+        from services.inventory_service import InventoryService
+        self.svc = InventoryService()
+
+    def test_use_item_consumable_without_heal_effect(self):
+        items_data = {'Зелье маны': {'slot': 'consumable', 'effect': {'mana': 50}}}
+        player = {'inventory': ['Зелье маны'], 'current_hp': 10}
+        ok, msg, healed = self.svc.use_item(player, 'Зелье маны', items_data, 30)
+        self.assertFalse(ok)
+        self.assertIn('не имеет эффекта', msg)
+        self.assertEqual(healed, 0)
+
+    def test_gift_gold_zero_amount_rejected(self):
+        giver = {'gold': 100}
+        receiver = {'gold': 0}
+        ok, msg = self.svc.gift_gold(giver, receiver, 0)
+        self.assertFalse(ok)
+        self.assertIn('больше нуля', msg)
+        self.assertEqual(giver['gold'], 100)
+
+    def test_gift_gold_negative_amount_rejected(self):
+        giver = {'gold': 100}
+        receiver = {'gold': 0}
+        ok, msg = self.svc.gift_gold(giver, receiver, -5)
+        self.assertFalse(ok)
+        self.assertIn('больше нуля', msg)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

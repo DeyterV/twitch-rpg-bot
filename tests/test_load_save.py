@@ -154,5 +154,44 @@ class TestImportErrorHandler(unittest.TestCase):
             sys.modules['rpg_bot'] = saved_rpg
 
 
+class TestRPGBotInit(unittest.TestCase):
+    def test_init_creates_services(self):
+        bot = rb.RPGbot()
+        self.assertIsNotNone(bot.player_service)
+        self.assertIsNotNone(bot.combat_service)
+        self.assertIsNotNone(bot.inventory_service)
+        self.assertEqual(bot.players, {})
+        self.assertEqual(bot.black_market_items, [])
+
+    def test_players_setter(self):
+        from tests.helpers import _bot, _player
+        bot = _bot()
+        bot.players = {'alice': _player()}
+        self.assertIn('alice', bot.player_service.players)
+
+
+class TestLoadPlayersMigration(unittest.TestCase):
+    def setUp(self):
+        self.bot = _bot()
+
+    def test_steal_time_unteal_migrated_to_last_steal_time(self):
+        data = {'user': {
+            'level': 1, 'xp': 0, 'gold': 100,
+            'inventory': [],
+            'equipment': {s: None for s in ('weapon', 'armor', 'helmet', 'pet', 'amulet')},
+            'last_xp_time': 0, 'last_fight_time': 0, 'last_pvp_time': 0,
+            'alms_unteal': 0, 'pvp_wins': 0, 'pvp_losses': 0,
+            'prison': False, 'prison_until': 0, 'race': None, 'class': None,
+            'current_hp': 30,
+            'steal_time_unteal': 12345,
+        }}
+        with patch('rpg_bot.SAVE_FILE', 'x.json'), \
+             patch('os.path.exists', return_value=True), \
+             patch('builtins.open', mock_open(read_data=json.dumps(data))):
+            result = self.bot.load_players()
+        self.assertEqual(result['user']['last_steal_time'], 12345)
+        self.assertNotIn('steal_time_unteal', result['user'])
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

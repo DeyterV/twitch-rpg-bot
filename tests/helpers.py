@@ -41,6 +41,7 @@ def _player(**kwargs):
         'inventory': [],
         'equipment': {s: None for s in ('weapon', 'armor', 'helmet', 'pet', 'amulet')},
         'last_xp_time': 0,
+        'alms_unteal': 0,
         'last_fight_time': 0,
         'last_pvp_time': 0,
         'pvp_wins': 0,

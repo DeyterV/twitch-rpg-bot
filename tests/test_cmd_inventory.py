@@ -115,7 +115,7 @@ class TestCmdUse(unittest.IsolatedAsyncioTestCase):
         ctx = _ctx('user', '!использовать Зелье лечения')
         ctx.message.content = '!использовать Зелье лечения'
         await bot.cmd_use(ctx)
-        self.assertEqual(bot.players['user']['current_hp'], 25)
+        self.assertEqual(bot.players['user']['current_hp'], 30)
         self.assertNotIn('Зелье лечения', bot.players['user']['inventory'])
 
     async def test_healing_potion_capped_at_max_hp(self):

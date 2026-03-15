@@ -1,6 +1,7 @@
 """Тесты локального консольного режима: LocalContext, LocalBot, BotContext."""
 
 import unittest
+from unittest.mock import patch, MagicMock
 
 from local_bot import BotContext, LocalContext, LocalBot, _COMMANDS
 from tests.helpers import _player
@@ -58,8 +59,8 @@ class TestLocalBot(unittest.TestCase):
             )
 
     def test_commands_map_is_complete(self):
-        # Убеждаемся, что словарь покрывает все 28 команд
-        self.assertEqual(len(_COMMANDS), 28)
+        # Убеждаемся, что словарь покрывает все 30 команд
+        self.assertEqual(len(_COMMANDS), 30)
 
 
 class TestLocalBotDispatch(unittest.IsolatedAsyncioTestCase):
@@ -101,6 +102,81 @@ class TestLocalBotDispatch(unittest.IsolatedAsyncioTestCase):
         ctx = LocalContext('newuser', '!старт')
         await self.bot._dispatch(ctx)
         self.assertIn('newuser', self.bot.players)
+
+
+class TestLocalBotInit(unittest.TestCase):
+    def test_init_creates_services(self):
+        bot = LocalBot()
+        self.assertIsNotNone(bot.player_service)
+        self.assertIsNotNone(bot.combat_service)
+        self.assertIsNotNone(bot.inventory_service)
+        self.assertEqual(bot.players, {})
+        self.assertEqual(bot.black_market_items, [])
+        self.assertEqual(bot.CD_XP, 45)
+        self.assertEqual(bot.CD_FIGHT, 20)
+
+
+class TestLocalBotRun(unittest.TestCase):
+    def test_run_calls_asyncio_run(self):
+        from unittest.mock import MagicMock, patch
+        bot = LocalBot()
+        bot.save_players = MagicMock()
+        with patch('local_bot.asyncio.run') as mock_run:
+            bot.run()
+        mock_run.assert_called_once()
+
+
+class TestLocalBotRepl(unittest.IsolatedAsyncioTestCase):
+    def _make_bot(self):
+        from unittest.mock import MagicMock
+        bot = LocalBot()
+        bot.save_players = MagicMock()
+        return bot
+
+    async def test_repl_exit_command(self):
+        bot = self._make_bot()
+        with patch('builtins.input', side_effect=['myuser', 'exit']):
+            await bot._repl()
+        bot.save_players.assert_called_once()
+
+    async def test_repl_quit_command(self):
+        bot = self._make_bot()
+        with patch('builtins.input', side_effect=['myuser', 'quit']):
+            await bot._repl()
+        bot.save_players.assert_called_once()
+
+    async def test_repl_russian_exit(self):
+        bot = self._make_bot()
+        with patch('builtins.input', side_effect=['myuser', 'выход']):
+            await bot._repl()
+        bot.save_players.assert_called_once()
+
+    async def test_repl_eoferror_exits(self):
+        bot = self._make_bot()
+        with patch('builtins.input', side_effect=['myuser', EOFError()]):
+            await bot._repl()
+        bot.save_players.assert_called_once()
+
+    async def test_repl_empty_line_skipped(self):
+        bot = self._make_bot()
+        with patch('builtins.input', side_effect=['myuser', '', 'exit']):
+            await bot._repl()
+
+    async def test_repl_default_username_on_empty_input(self):
+        bot = self._make_bot()
+        with patch('builtins.input', side_effect=['', 'exit']):
+            await bot._repl()
+
+    async def test_repl_valid_command_dispatched(self):
+        bot = self._make_bot()
+        with patch('builtins.input', side_effect=['myuser', '!старт', 'exit']):
+            await bot._repl()
+        self.assertIn('myuser', bot.players)
+
+    async def test_repl_unknown_command_does_not_raise(self):
+        bot = self._make_bot()
+        with patch('builtins.input', side_effect=['myuser', '!несуществует', 'exit']):
+            await bot._repl()
 
 
 if __name__ == '__main__':

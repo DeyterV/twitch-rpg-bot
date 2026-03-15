@@ -89,6 +89,8 @@ _COMMANDS: dict[str, str] = {
     '!класс':       'cmd_class',
     '!отдых':       'cmd_full_heal',
     '!подарить':    'cmd_gift',
+    '!команды':     'cmd_commands',
+    '!милостыня':   'cmd_alms',
 }
 
 _HELP = 'Доступные команды: ' + ', '.join(sorted(_COMMANDS))

@@ -107,6 +107,7 @@ class RPGbot(commands.Bot):
                         'last_fight_time': 0,
                         'last_pvp_time': 0,
                         'last_steal_time': 0,
+                        'alms_unteal': 0,
                         'pvp_wins': 0,
                         'pvp_losses': 0,
                         'prison': False,
@@ -973,45 +974,70 @@ class RPGbot(commands.Bot):
     @commands.command(name='подарить')
     @requires_character
     async def cmd_gift(self, ctx):
-        """Подарить предмет или золото другому игроку."""
+        """Подарить любой предмет из инвентаря другому игроку"""
         user = ctx.author.name.lower()
         parts = ctx.message.content.strip().split(maxsplit=2)
         player = self.players[user]
 
         if len(parts) != 3:
-            await ctx.send(f'@{user}, формат: !подарить @ник <золото <сумма>|предмет>')
+            await ctx.send(f'@{user}, формат отправки подарка: !подарить <имя персонажа> <название предмета из инвентаря>')
             return
 
         target = parts[1].lstrip('@').lower()
-        gift = parts[2].strip()
+        item = parts[2].capitalize()
+        item_parts = item.split()
 
         if target not in self.players:
             await ctx.send(f'@{user}, {target} должен иметь персонажа!')
             return
 
         target_player = self.players[target]
-        gift_parts = gift.split()
 
-        if gift_parts[0].lower() == 'золото':
-            if len(gift_parts) < 2 or not gift_parts[1].isdigit():
+        if item_parts[0] == 'Золото':
+            if len(item_parts) < 2 or not item_parts[1].isdigit():
                 await ctx.send(f'@{user}, ты хоть сам понял что хочешь?)')
                 return
-            ok, msg = self.inventory_service.gift_gold(player, target_player, int(gift_parts[1]))
+            ok, msg = self.inventory_service.gift_gold(player, target_player, int(item_parts[1]))
             if ok:
                 self.save_players()
-                await ctx.send(f'@{user} подарил @{target} {gift_parts[1]} золотых монет!')
+                await ctx.send(f'@{user} подарил @{target} {item_parts[1]} золотых монет!')
             else:
                 await ctx.send(f'@{user}, {msg}!')
+            return
+
+        ok, msg = self.inventory_service.gift_item(player, target_player, item)
+        if ok:
+            self.save_players()
+            await ctx.send(f'@{user} успешно передал @{target} предмет {item}')
         else:
-            ok, msg = self.inventory_service.gift_item(player, target_player, gift)
-            if ok:
-                self.save_players()
-                await ctx.send(f'@{user} успешно передал @{target} предмет {gift}')
-            else:
-                await ctx.send(f'@{user}, {msg}!')
+            await ctx.send(f'@{user}, {msg}!')
 
 
-if __name__ == '__main__':
+    @commands.command(name='команды')
+    async def cmd_commands(self, ctx):
+        """Отправить ссылку на список команд."""
+        user = ctx.author.name.lower()
+        await ctx.send(f'@{user} для просмотра команд иди в описание канала!')
+
+    @commands.command(name='милостыня')
+    @requires_character
+    async def cmd_alms(self, ctx):
+        """Попросить милостыню (раз в 5 минут)."""
+        now = time.time()
+        user = ctx.author.name.lower()
+        player = self.players[user]
+        if player['alms_unteal'] >= now:
+            remain = int(player['alms_unteal'] - now) + 1
+            await ctx.send(f'@{user}, шел бы ты, пока люлей не дали! До следующей попытки {remain} секунд.')
+            return
+        gold_given = random.choice([0, 1, 2])
+        player['alms_unteal'] = now + 300
+        player['gold'] += gold_given
+        self.save_players()
+        await ctx.send(f'@{user}, тебе дали {gold_given} монет/у, благодари господа!')
+
+
+if __name__ == '__main__':  # pragma: no cover
     MODE = os.getenv('MODE', 'twitch')
     if MODE == 'local':
         from local_bot import LocalBot
