@@ -87,11 +87,10 @@ class TestLocalBotDispatch(unittest.IsolatedAsyncioTestCase):
         self.bot.save_players = MagicMock()
 
     async def test_dispatch_calls_correct_handler(self):
-        from unittest.mock import AsyncMock
-        self.bot.cmd_start = AsyncMock()
+        # _dispatch вызывает реальный cmd_start — проверяем по эффекту
         ctx = LocalContext('user', '!старт')
         await self.bot._dispatch(ctx)
-        self.bot.cmd_start.assert_awaited_once_with(ctx)
+        self.assertIn('user', self.bot.players)
 
     async def test_dispatch_unknown_command_prints_help(self, capsys=None):
         ctx = LocalContext('user', '!несуществует')

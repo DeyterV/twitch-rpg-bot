@@ -48,6 +48,11 @@ _CLASSES = _load_yml('classes.yml')
 class RPGbot(commands.Bot):
     """Twitch RPG бот с системой уровней, боев, экономики и кражи."""
 
+    CD_XP: int = 300
+    CD_FIGHT: int = 90
+    CD_PVP: int = 60
+    CD_STEAL: int = 300
+
     def __init__(self):
         """Инициализация бота с загрузкой данных игроков и настройкой параметров."""
         super().__init__(token=TOKEN, prefix='!', initial_channels=[CHANNEL])
@@ -328,7 +333,7 @@ class RPGbot(commands.Bot):
         user = ctx.author.name.lower()
         player = self.players[user]
 
-        if not await self.check_cooldown(player, 'last_xp_time', 300, ctx):
+        if not await self.check_cooldown(player, 'last_xp_time', self.CD_XP, ctx):
             return
 
         base_xp = 50
@@ -435,7 +440,7 @@ class RPGbot(commands.Bot):
             await ctx.send(f'@{ctx.author.name}, ты в тюрьме! Заплати взятку (!взятка) или жди {remain} сек.')
             return
 
-        if not await self.check_cooldown(player, 'last_fight_time', 90, ctx):
+        if not await self.check_cooldown(player, 'last_fight_time', self.CD_FIGHT, ctx):
             return
 
         parts = ctx.message.content.strip().split()
@@ -567,8 +572,8 @@ class RPGbot(commands.Bot):
         a = self.players[challenger]
         d = self.players[defender]
 
-        if not await self.check_cooldown(a, 'last_pvp_time', 60, ctx) or \
-           not await self.check_cooldown(d, 'last_pvp_time', 60, ctx):
+        if not await self.check_cooldown(a, 'last_pvp_time', self.CD_PVP, ctx) or \
+           not await self.check_cooldown(d, 'last_pvp_time', self.CD_PVP, ctx):
             return
 
         if amount > 0 and (a['gold'] < amount or d['gold'] < amount):
@@ -810,7 +815,7 @@ class RPGbot(commands.Bot):
             return
 
         player = self.players[user]
-        if not await self.check_cooldown(player, 'last_steal_time', 300, ctx):
+        if not await self.check_cooldown(player, 'last_steal_time', self.CD_STEAL, ctx):
             return
 
         target_player = self.players[target]
@@ -1006,10 +1011,11 @@ class RPGbot(commands.Bot):
                 await ctx.send(f'@{user}, {msg}!')
 
 
-MODE = os.getenv('MODE', 'twitch')
-if MODE == 'local':
-    from local_bot import LocalBot
-    bot = LocalBot()
-else:
-    bot = RPGbot()
-bot.run()
+if __name__ == '__main__':
+    MODE = os.getenv('MODE', 'twitch')
+    if MODE == 'local':
+        from local_bot import LocalBot
+        bot = LocalBot()
+    else:
+        bot = RPGbot()
+    bot.run()
