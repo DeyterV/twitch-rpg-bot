@@ -1,0 +1,9 @@
+воин:
+  attack_bonus: [2, 5]
+  hp_bonus: 10
+маг:
+  attack_bonus: [0, 3]
+  xp_bonus: 0.1
+вор:
+  attack_bonus: [1, 4]
+  steal_chance_bonus: 0.05

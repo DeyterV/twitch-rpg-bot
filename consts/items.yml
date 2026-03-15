@@ -1,0 +1,77 @@
+Деревянный меч:
+  slot: weapon
+  attack_bonus: [2, 4]
+  hp_bonus: 0
+  price: 30
+Железный меч:
+  slot: weapon
+  attack_bonus: [5, 7]
+  hp_bonus: 0
+  price: 80
+Орочий топор:
+  slot: weapon
+  attack_bonus: [6, 8]
+  hp_bonus: 0
+  price: 120
+Кожаная броня:
+  slot: armor
+  attack_bonus: 0
+  hp_bonus: 10
+  price: 50
+Кольчуга:
+  slot: armor
+  attack_bonus: 0
+  hp_bonus: 15
+  price: 100
+Железный доспех:
+  slot: armor
+  attack_bonus: 0
+  hp_bonus: 20
+  price: 150
+Кожаный шлем:
+  slot: helmet
+  attack_bonus: 0
+  hp_bonus: 5
+  price: 30
+Железный шлем:
+  slot: helmet
+  attack_bonus: 0
+  hp_bonus: 8
+  price: 60
+Теневой змей:
+  slot: pet
+  attack_bonus: [3, 5]
+  hp_bonus: 0
+  price: 10000
+Мягкое облочко:
+  slot: pet
+  attack_bonus: 0
+  hp_bonus: 10
+  price: 10000
+Слизь:
+  slot: pet
+  attack_bonus: 0
+  hp_bonus: 3
+  price: 20
+Странно пахнущий мешочек:
+  slot: pet
+  attack_bonus: [1, 2]
+  hp_bonus: 0
+  price: 30
+Зелье лечения:
+  slot: consumable
+  effect:
+    heal: 20
+  price: 50
+Амулет удачи:
+  slot: amulet
+  effect:
+    steal_chance_bonus: 0.05
+  attack_bonus: 0
+  hp_bonus: 0
+  price: 200
+Драконий клык:
+  slot: weapon
+  attack_bonus: [8, 10]
+  hp_bonus: 0
+  price: 500

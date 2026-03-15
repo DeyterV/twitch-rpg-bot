@@ -19,20 +19,23 @@ TOKEN = os.getenv('TOKEN')
 CHANNEL = os.getenv('CHANNEL')
 SAVE_FILE = os.getenv('SAVE_FILE', 'players.json')
 
-_CONSTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'consts.yml')
-try:
-    with open(_CONSTS_FILE, 'r', encoding='utf-8') as _f:
-        _consts = yaml.safe_load(_f)
-except (FileNotFoundError, yaml.YAMLError) as e:
-    logging.error(f"Ошибка загрузки consts.yml: {e}")
-    raise
+_CONSTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'consts')
 
-MONSTERS = _consts['monsters']
-ITEM_DESCRIPTIONS = _consts['item_descriptions']
-ITEMS = _consts['items']
-BLACK_MARKET_ITEMS = _consts['black_market_items']
-_RACES = _consts['races']
-_CLASSES = _consts['classes']
+def _load_yml(filename):
+    path = os.path.join(_CONSTS_DIR, filename)
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return yaml.safe_load(f)
+    except (FileNotFoundError, yaml.YAMLError) as e:
+        logging.error(f"Ошибка загрузки {filename}: {e}")
+        raise
+
+MONSTERS = _load_yml('monsters.yml')
+ITEM_DESCRIPTIONS = _load_yml('item_descriptions.yml')
+ITEMS = _load_yml('items.yml')
+BLACK_MARKET_ITEMS = _load_yml('black_market_items.yml')
+_RACES = _load_yml('races.yml')
+_CLASSES = _load_yml('classes.yml')
 
 def calculate_hp(level):
     """Рассчитать максимальное HP персонажа по уровню."""

@@ -1,0 +1,19 @@
+- name: Теневой змей
+  type: pet
+  price: 12000
+  description: 'Питомец. Увеличивает урон (+3-5).'
+- name: Мягкое облочко
+  type: pet
+  price: 12000
+  description: 'Питомец. Даёт +10 HP.'
+- name: Зелье лечения
+  type: consumable
+  price: 80
+  description: 'Одноразовое зелье, восстанавливает 20 HP.'
+- name: 'Сочная жопка @darkestreklin'
+  price: 5000
+  description: 'А по названию не понятно?'
+- name: Амулет удачи
+  type: amulet
+  price: 300
+  description: 'Увеличивает шанс успешной кражи на 5%.'

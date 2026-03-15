@@ -1817,11 +1817,11 @@ class TestImportErrorHandler(unittest.TestCase):
         saved_rpg = sys.modules.pop('rpg_bot', None)
 
         try:
-            # Подменяем open так, чтобы открытие consts.yml бросало FileNotFoundError
+            # Подменяем open так, чтобы открытие любого файла из consts/ бросало FileNotFoundError
             real_open = open
             def fake_open(path, *a, **kw):
-                if str(path).endswith('consts.yml'):
-                    raise FileNotFoundError('consts.yml not found')
+                if 'consts' in str(path) and str(path).endswith('.yml'):
+                    raise FileNotFoundError('consts file not found')
                 return real_open(path, *a, **kw)
 
             with patch('builtins.open', side_effect=fake_open):

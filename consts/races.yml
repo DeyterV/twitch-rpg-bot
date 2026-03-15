@@ -1,0 +1,12 @@
+человек:
+  hp_bonus: 5
+  xp_bonus: 0
+эльф:
+  hp_bonus: 0
+  xp_bonus: 0.1
+орк:
+  hp_bonus: 10
+  xp_bonus: -0.05
+фурри:
+  hp_bonus: 3
+  xp_bonus: 0.02
