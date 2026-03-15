@@ -5,6 +5,7 @@ import random
 import time
 import shutil
 import logging
+import yaml
 from collections import Counter
 from dotenv import load_dotenv
 from filelock import FileLock
@@ -18,11 +19,20 @@ TOKEN = os.getenv('TOKEN')
 CHANNEL = os.getenv('CHANNEL')
 SAVE_FILE = os.getenv('SAVE_FILE', 'players.json')
 
+_CONSTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'consts.yml')
 try:
-    from consts import MONSTERS, ITEM_DESCRIPTIONS, ITEMS, BLACK_MARKET_ITEMS
-except ImportError as e:
-    logging.error(f"Ошибка импорта констант: {e}")
-    raise ImportError(f"Ошибка импорта констант: {e}")
+    with open(_CONSTS_FILE, 'r', encoding='utf-8') as _f:
+        _consts = yaml.safe_load(_f)
+except (FileNotFoundError, yaml.YAMLError) as e:
+    logging.error(f"Ошибка загрузки consts.yml: {e}")
+    raise
+
+MONSTERS = _consts['monsters']
+ITEM_DESCRIPTIONS = _consts['item_descriptions']
+ITEMS = _consts['items']
+BLACK_MARKET_ITEMS = _consts['black_market_items']
+_RACES = _consts['races']
+_CLASSES = _consts['classes']
 
 def calculate_hp(level):
     """Рассчитать максимальное HP персонажа по уровню."""
@@ -42,16 +52,8 @@ class RPGbot(commands.Bot):
         self.black_market_items = []
         self.black_market_last_refresh = 0
         self.pending_duels = {}
-        self.races = {
-            'человек': {'hp_bonus': 5, 'xp_bonus': 0},
-            'эльф': {'hp_bonus': 0, 'xp_bonus': 0.1},
-            'орк': {'hp_bonus': 10, 'xp_bonus': -0.05}
-        }
-        self.classes = {
-            'воин': {'attack_bonus': (2, 5), 'hp_bonus': 10},
-            'маг': {'attack_bonus': (0, 3), 'xp_bonus': 0.1},
-            'вор': {'attack_bonus': (1, 4), 'steal_chance_bonus': 0.05}
-        }
+        self.races = _RACES
+        self.classes = _CLASSES
 
     def load_players(self):
         """Загрузить данные игроков из JSON-файла с проверкой структуры."""
@@ -134,7 +136,7 @@ class RPGbot(commands.Bot):
         for slot, item_name in equip.items():
             if item_name and item_name in ITEMS:
                 item = ITEMS[item_name]
-                ab_min, ab_max = item['attack_bonus'] if isinstance(item['attack_bonus'], tuple) else (item['attack_bonus'], item['attack_bonus'])
+                ab_min, ab_max = item['attack_bonus'] if isinstance(item['attack_bonus'], (tuple, list)) else (item['attack_bonus'], item['attack_bonus'])
                 attack_bonus_min += ab_min
                 attack_bonus_max += ab_max
                 hp_bonus += item.get('hp_bonus', 0)
@@ -143,7 +145,7 @@ class RPGbot(commands.Bot):
         player_class = player.get('class')
         if player_class in self.classes:
             class_info = self.classes[player_class]
-            ab_min, ab_max = class_info['attack_bonus'] if isinstance(class_info['attack_bonus'], tuple) else (class_info['attack_bonus'], class_info['attack_bonus'])
+            ab_min, ab_max = class_info['attack_bonus'] if isinstance(class_info['attack_bonus'], (tuple, list)) else (class_info['attack_bonus'], class_info['attack_bonus'])
             attack_bonus_min += ab_min
             attack_bonus_max += ab_max
             hp_bonus += class_info.get('hp_bonus', 0)

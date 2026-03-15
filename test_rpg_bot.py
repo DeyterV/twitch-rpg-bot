@@ -1,9 +1,10 @@
 """
-Unit tests for twitch-rpg-bot (old version: settings.py + consts.py).
+Unit tests for twitch-rpg-bot.
 
 Стратегия:
-  - До импорта rpg_bot подменяем sys.modules для settings, filelock, twitchio
+  - До импорта rpg_bot подменяем sys.modules для dotenv, filelock, twitchio
     чтобы исключить реальное подключение к Twitch и запись файлов.
+  - Константы загружаются из реального consts.yml.
   - Для каждого теста создаём свежий экземпляр RPGbot через object.__new__
     (минуя __init__ и super().__init__) и вручную заполняем нужные атрибуты.
   - Метод save_players в тестовых экземплярах заменяется на MagicMock.
@@ -1810,22 +1811,23 @@ class TestNoCharacterGuards(unittest.IsolatedAsyncioTestCase):
 # ============================================================
 
 class TestImportErrorHandler(unittest.TestCase):
-    def test_import_error_triggers_handler(self):
+    def test_missing_consts_yml_raises(self):
         import importlib
 
-        saved_rpg = sys.modules.get('rpg_bot')
-        saved_consts = sys.modules.get('consts')
-
-        # Broken consts: missing MONSTERS, ITEMS, etc.
-        broken_consts = types.ModuleType('consts')
-        sys.modules['consts'] = broken_consts
-        sys.modules.pop('rpg_bot', None)
+        saved_rpg = sys.modules.pop('rpg_bot', None)
 
         try:
-            with self.assertRaises(ImportError):
-                importlib.import_module('rpg_bot')
+            # Подменяем open так, чтобы открытие consts.yml бросало FileNotFoundError
+            real_open = open
+            def fake_open(path, *a, **kw):
+                if str(path).endswith('consts.yml'):
+                    raise FileNotFoundError('consts.yml not found')
+                return real_open(path, *a, **kw)
+
+            with patch('builtins.open', side_effect=fake_open):
+                with self.assertRaises(FileNotFoundError):
+                    importlib.import_module('rpg_bot')
         finally:
-            sys.modules['consts'] = saved_consts
             sys.modules['rpg_bot'] = saved_rpg
 
 

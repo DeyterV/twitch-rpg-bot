@@ -1,0 +1,179 @@
+monsters:
+  Гоблин:
+    base_hp: 25
+    base_attack: 8
+    xp_reward: [10, 20]
+    gold_reward: [10, 25]
+    loot: [Деревянный меч, Кожаный шлем, Странно пахнущий мешочек]
+    loot_chance: 0.3
+  Слизень:
+    base_hp: 30
+    base_attack: 6
+    xp_reward: [10, 18]
+    gold_reward: [8, 20]
+    loot: [Слизь, Зелье лечения]
+    loot_chance: 0.25
+  Скелет:
+    base_hp: 30
+    base_attack: 10
+    xp_reward: [15, 25]
+    gold_reward: [15, 30]
+    loot: [Железный меч, Кольчуга, Кость]
+    loot_chance: 0.3
+  Орк:
+    base_hp: 50
+    base_attack: 12
+    xp_reward: [20, 35]
+    gold_reward: [20, 40]
+    loot: [Орочий топор, Железный доспех, Железный шлем]
+    loot_chance: 0.3
+  Дракон:
+    base_hp: 100
+    base_attack: 20
+    xp_reward: [50, 80]
+    gold_reward: [50, 100]
+    loot: [Драконий клык, Зелье лечения, Амулет удачи]
+    loot_chance: 0.5
+    rare: true
+
+item_descriptions:
+  деревянный меч: 'Простой деревянный меч. Увеличивает урон (+2-4).'
+  железный меч: 'Надёжное оружие для ближнего боя (+5-7).'
+  орочий топор: 'Мощный топор, созданный орками (+6-8).'
+  кожаная броня: 'Лёгкая броня из кожи, даёт +10 HP.'
+  кольчуга: 'Средняя броня из металлических колец, даёт +15 HP.'
+  железный доспех: 'Тяжёлый доспех, значительно увеличивает защиту (+20 HP).'
+  кожаный шлем: 'Простой кожаный шлем, даёт +5 HP.'
+  железный шлем: 'Железный шлем для защиты головы, даёт +8 HP.'
+  странно пахнущий мешочек: 'Мешочек с неизвестным содержимым, питомец с +1 уроном.'
+  слизь: 'Скользкий питомец, даёт +3 HP.'
+  кость: 'Кость скелета, можно продать или использовать в ритуалах.'
+  теневой змей: 'Тёмный питомец, увеличивает урон (+5).'
+  мягкое облочко: 'Пухлый питомец, окутывает тебя и даёт +10 HP.'
+  зелье лечения: 'Одноразовое зелье, восстанавливает 20 HP при использовании.'
+  амулет удачи: 'Увеличивает шанс успешной кражи на 5%.'
+  мешок с чем-то: 'Таинственный мешок, даёт +5 HP и +2-3 урона.'
+  проклятое яйцо: 'Питомец с проклятьем, даёт +10 урон, но снижает HP на 5.'
+  драконий клык: 'Редкое оружие, выкованное из клыка дракона (+8-10).'
+
+items:
+  Деревянный меч:
+    slot: weapon
+    attack_bonus: [2, 4]
+    hp_bonus: 0
+    price: 30
+  Железный меч:
+    slot: weapon
+    attack_bonus: [5, 7]
+    hp_bonus: 0
+    price: 80
+  Орочий топор:
+    slot: weapon
+    attack_bonus: [6, 8]
+    hp_bonus: 0
+    price: 120
+  Кожаная броня:
+    slot: armor
+    attack_bonus: 0
+    hp_bonus: 10
+    price: 50
+  Кольчуга:
+    slot: armor
+    attack_bonus: 0
+    hp_bonus: 15
+    price: 100
+  Железный доспех:
+    slot: armor
+    attack_bonus: 0
+    hp_bonus: 20
+    price: 150
+  Кожаный шлем:
+    slot: helmet
+    attack_bonus: 0
+    hp_bonus: 5
+    price: 30
+  Железный шлем:
+    slot: helmet
+    attack_bonus: 0
+    hp_bonus: 8
+    price: 60
+  Теневой змей:
+    slot: pet
+    attack_bonus: [3, 5]
+    hp_bonus: 0
+    price: 10000
+  Мягкое облочко:
+    slot: pet
+    attack_bonus: 0
+    hp_bonus: 10
+    price: 10000
+  Слизь:
+    slot: pet
+    attack_bonus: 0
+    hp_bonus: 3
+    price: 20
+  Странно пахнущий мешочек:
+    slot: pet
+    attack_bonus: [1, 2]
+    hp_bonus: 0
+    price: 30
+  Зелье лечения:
+    slot: consumable
+    effect:
+      heal: 20
+    price: 50
+  Амулет удачи:
+    slot: amulet
+    effect:
+      steal_chance_bonus: 0.05
+    attack_bonus: 0
+    hp_bonus: 0
+    price: 200
+  Драконий клык:
+    slot: weapon
+    attack_bonus: [8, 10]
+    hp_bonus: 0
+    price: 500
+
+black_market_items:
+  - name: Теневой змей
+    type: pet
+    price: 12000
+    description: 'Питомец. Увеличивает урон (+3-5).'
+  - name: Мягкое облочко
+    type: pet
+    price: 12000
+    description: 'Питомец. Даёт +10 HP.'
+  - name: Зелье лечения
+    type: consumable
+    price: 80
+    description: 'Одноразовое зелье, восстанавливает 20 HP.'
+  - name: 'Сочная жопка @darkestreklin'
+    price: 5000
+    description: 'А по названию не понятно?'
+  - name: Амулет удачи
+    type: amulet
+    price: 300
+    description: 'Увеличивает шанс успешной кражи на 5%.'
+
+races:
+  человек:
+    hp_bonus: 5
+    xp_bonus: 0
+  эльф:
+    hp_bonus: 0
+    xp_bonus: 0.1
+  орк:
+    hp_bonus: 10
+    xp_bonus: -0.05
+
+classes:
+  воин:
+    attack_bonus: [2, 5]
+    hp_bonus: 10
+  маг:
+    attack_bonus: [0, 3]
+    xp_bonus: 0.1
+  вор:
+    attack_bonus: [1, 4]
+    steal_chance_bonus: 0.05
